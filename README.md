@@ -12,7 +12,6 @@ The MONKEY (Machine-learning for Optimal detection of iNflammatory cells in the 
 
 [![MONKEY Challenge Webinar](https://img.youtube.com/vi/A1uZmbYutYU/0.jpg)](https://www.youtube.com/watch?v=A1uZmbYutYU)
 
-<iframe width="560" height="315" src="https://www.youtube.com/embed/A1uZmbYutYU?si=QfEL4h_gp0JFHTrQ" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
 
 ### Challenge Overview
 
