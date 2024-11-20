@@ -6,6 +6,8 @@ The MONKEY (Machine-learning for Optimal detection of iNflammatory cells in the 
 
 > [!IMPORTANT]  
 > Please read the [Monkey Challenge Website](https://monkey.grand-challenge.org/) and watch the [Official Seminar](https://www.youtube.com/watch?v=A1uZmbYutYU) on YouTube.
+>
+> For a medical background introduction, please read this doc: [pathology and background](docs/medical_background_pathology.md).
 
 
 ### Kick-off Webinar
@@ -14,6 +16,8 @@ The MONKEY (Machine-learning for Optimal detection of iNflammatory cells in the 
 
 
 ### Challenge Overview
+
+![example challenge](media/images/classification_example.png)
 
 The challenge comprises two primary tasks:
 
