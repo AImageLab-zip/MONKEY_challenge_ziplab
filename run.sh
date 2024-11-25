@@ -1,8 +1,7 @@
 #!/bin/bash
 
-
 #SBATCH --account=grana_urologia
-#SBATCH --job-name=monkey_challenge
+#SBATCH --job-name=monkey_challenge_data_download
 #SBATCH --partition=all_usr_prod ### this is the partition for production (not for development)
 
 #### Create a directory for the logs and log stdout and stderr
@@ -12,13 +11,13 @@
 #SBATCH --time=24:00:00  # Set a maximum time limit (HH:MM:SS)
 
 #SBATCH --cpus-per-task=4 # Request number of CPU cores
-#SBATCH --mem-per-cpu=2G  # memory per CPU core
+#SBATCH --mem-per-cpu=1G  # memory per CPU core
 
 ### total memory will be: cpus-per-task * mem-per-cpu
 
 #SBATCH --ntasks=1 # number of tasks per node
 
-#SBATCH --gres=gpu:1 ## number of gpus
+###SBATCH --gres=gpu:1 ## number of gpus (#no gpu for downloading data)
 
 ### if you need a specific gpu type, you can use the constraint flag between OR "|" symbols. Example:
 
@@ -38,10 +37,10 @@ echo "========================="
 echo "== Loading modules and activating env... =="
 
 ## load the modules you need
-module unload cuda
-module load cuda/11.0 #load old cuda version
-## activate your virtual environment using it's path (example)
-source /work/grana_urologia/MONKEY_challenge/env/bin/activate
+# module unload cuda
+# module load cuda/11.0 #load old cuda version
+# ## activate your virtual environment using it's path (example)
+# source /work/grana_urologia/MONKEY_challenge/env/bin/activate
 
 echo "== Environment activated! =="
 
@@ -55,7 +54,12 @@ echo "========================="
 echo "== Running scripts =="
 
 ## run your python script (example with args)
-python path_to_your_script.py --arg1=value1 --arg2=value2 --config_file=path_to_your_config_file.yaml
+#python path_to_your_script.py --arg1=value1 --arg2=value2 --config_file=path_to_your_config_file.yaml
+
+source ~/.bashrc
+cd /work/grana_urologia/MONKEY_challenge/data
+aws s3 cp --no-sign-request s3://monkey-training/ . --recursive
+
 
 echo "== Finished running script! =="
 
