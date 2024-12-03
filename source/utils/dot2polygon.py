@@ -1,5 +1,6 @@
 import xml.etree.ElementTree as ET
 
+
 def dot2polygon(xml_path, lymphocyte_half_box_size, monocytes_half_box_size, min_spacing, output_path):
     '''
     :param xml_path (str): the path of the annotation file, ex. root\sub_root\filename.xml

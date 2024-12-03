@@ -6,6 +6,7 @@ creationism
 Cython
 pillow==9.5.0
 git+https://github.com/DIAGNijmegen/pathology-whole-slide-data@main
+jupyter
 pandas
 black
 isort
