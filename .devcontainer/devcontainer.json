@@ -5,7 +5,8 @@
         "context": ".."
     },
     "runArgs": [
-        "--gpus=all"
+        "--gpus=all",
+        "--shm-size=4g"
     ],
     "workspaceFolder": "/workspace",
     "workspaceMount": "source=${localWorkspaceFolder},target=/workspace,type=bind",

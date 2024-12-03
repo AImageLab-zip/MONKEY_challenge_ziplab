@@ -6,7 +6,7 @@
 data/*
 models/*
 logs/*
-
+outputs/*
 data_debug/images/*
 
 
