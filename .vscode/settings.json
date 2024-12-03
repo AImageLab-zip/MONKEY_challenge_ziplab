@@ -1,0 +1,10 @@
+{
+    "python.formatting.provider": "black",
+    "[python]": {
+        "editor.formatOnSave": true
+    },
+    "editor.codeActionsOnSave": {
+        "source.organizeImports": "explicit"
+    },
+    "python.sortImports.path": "/venv/bin/isort"
+}

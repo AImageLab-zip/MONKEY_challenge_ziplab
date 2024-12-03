@@ -1,19 +1,24 @@
 {
-	"name": "Monkey_Challenge_devcontainer",
-	"build": {
-		"dockerfile": "Dockerfile",
-		"context": ".."
-	},
-	"workspaceFolder": "/workspace",
-	"workspaceMount": "source=${localWorkspaceFolder},target=/workspace,type=bind",
-	"postCreateCommand": "pip install --no-cache-dir -r /workspace/requirements.txt",
-	"customizations": {
-		"vscode": {
-			"extensions": [
-				"ms-python.python",
-				"ms-toolsai.jupyter"
-			]
-		}
-	},
-	"remoteUser": "vscode"
+    "name": "Monkey_Challenge_devcontainer",
+    "build": {
+        "dockerfile": "Dockerfile",
+        "context": ".."
+    },
+    "runArgs": [
+        "--gpus=all"
+    ],
+    "workspaceFolder": "/workspace",
+    "workspaceMount": "source=${localWorkspaceFolder},target=/workspace,type=bind",
+    "customizations": {
+        "vscode": {
+            "extensions": [
+                "ms-python.python",
+                "ms-toolsai.jupyter",
+                "ms-python.black-formatter",
+                "ms-python.isort"
+            ]
+        }
+    },
+    "remoteUser": "vscode",
+    "postCreateCommand": "/venv/bin/pip install --no-cache-dir -r /workspace/requirements.txt && /venv/bin/pip install git+https://github.com/DIAGNijmegen/pathology-whole-slide-data@main"
 }
