@@ -1,3 +1,3 @@
-[submodule "/workspace/challenge_example_code/monkey-debug"]
-	path = /workspace/challenge_example_code/monkey-debug
+[submodule "/workspace/challenge_example_code/"]
+	path = /workspace/challenge_example_code/
 	url = https://github.com/computationalpathologygroup/monkey-challenge.git
