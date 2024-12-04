@@ -11,6 +11,11 @@ data_debug/images/*
 inference-docker-debug/example_model/*
 inference-docker-debug/test/*
 
+#tar gz files
+*.tar.gz
+*.tar
+*.gz
+
 
 ### JupyterNotebooks ###
 # gitignore template for Jupyter Notebooks
