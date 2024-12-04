@@ -8,6 +8,8 @@ models/*
 logs/*
 outputs/*
 data_debug/images/*
+inference-docker-debug/example_model/*
+inference-docker-debug/test/*
 
 
 ### JupyterNotebooks ###
