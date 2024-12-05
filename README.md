@@ -1,5 +1,16 @@
 # UNIMORE AImageLab Zip MONKEY Challenge Solution
 
+## Installation
+
+To run the code in the simplest way, you need anaconda/conda installed.
+Simply run the script `install_conda_env.sh`
+
+    bash install_conda_env.sh
+
+If you want to develop locally with VSCode you can use the .devcontainer files to make a docker with the exact os, libraries, etc..
+See how in the [devcontainers VSCode documentation](https://code.visualstudio.com/docs/devcontainers/containers).
+
+
 ## Overview of the MONKEY Challenge: Detection of Inflammation in Kidney Biopsies
 
 The MONKEY (Machine-learning for Optimal detection of iNflammatory cells in the KidnEY) challenge aims to develop automated methods for detecting and classifying inflammatory cells in kidney transplant biopsies. This initiative seeks to enhance the consistency and efficiency of histopathological assessments, particularly in the context of the Banff classification system.
