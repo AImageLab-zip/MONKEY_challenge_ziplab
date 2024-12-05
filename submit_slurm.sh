@@ -1,5 +1,6 @@
 #!/bin/bash
 
+
 #SBATCH --account=grana_urologia
 #SBATCH --job-name=monkey_challenge_task
 #SBATCH --partition=all_usr_prod 
@@ -36,11 +37,12 @@ echo "========================="
 
 echo "== Loading modules and activating env... =="
 
+. /usr/local/anaconda3/etc/profile.d/conda.sh
 ## load the modules you need
 module unload cuda
 module load cuda/11.0 #load old cuda version
 # ## activate your virtual environment using it's path (example)
-source /work/grana_urologia/MONKEY_challenge/env/bin/activate
+conda activate monkey_env
 
 echo "== Environment activated! =="
 
