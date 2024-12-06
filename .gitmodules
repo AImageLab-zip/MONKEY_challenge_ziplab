@@ -1,3 +1,0 @@
-[submodule "./challenge_example_code"]
-	path = ./challenge_example_code
-	url = https://github.com/computationalpathologygroup/monkey-challenge.git
