@@ -56,7 +56,7 @@ class Detectron2DetectionPredictor:
         cfg.DATALOADER.NUM_WORKERS = 1
 
         cfg.MODEL.ROI_HEADS.BATCH_SIZE_PER_IMAGE = 512
-        cfg.MODEL.ROI_HEADS.NUM_CLASSES = 1
+        cfg.MODEL.ROI_HEADS.NUM_CLASSES = 2 #was 1!
         cfg.MODEL.ANCHOR_GENERATOR.SIZES = [[16, 24, 32]]
 
         cfg.SOLVER.IMS_PER_BATCH = 10
