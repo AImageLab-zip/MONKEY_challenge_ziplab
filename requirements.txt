@@ -11,6 +11,8 @@ pandas
 scikit-learn
 seaborn
 shapely==1.8.1 #downgrade to try to fix the error on xml creation (see https://grand-challenge.org/forums/forum/machine-learning-for-optimal-detection-of-inflammatory-cells-in-736/topic/typeerror-__new__-got-an-unexpected-keyword-argument-index-in-point-initialization-2821/)
+psutil
+monai
 # development dependencies
 black
 isort
