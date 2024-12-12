@@ -6,6 +6,11 @@
 monkey_env/*
 monkey_env
 
+## asap install
+
+asap/*
+asap
+
 ## Custom folders
 
 data/*

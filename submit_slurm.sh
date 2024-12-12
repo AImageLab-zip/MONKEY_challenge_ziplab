@@ -46,6 +46,12 @@ module load cuda/11.0 #load old cuda version
 conda activate /work/grana_urologia/MONKEY_challenge/monkey_env
 #source /work/grana_urologia/MONKEY_challenge/monkey_env/bin/activate
 
+# export env variables
+
+export PATH=/work/grana_urologia/MONKEY_challenge/asap/opt/ASAP/bin:$PATH
+export LD_LIBRARY_PATH=/work/grana_urologia/MONKEY_challenge/asap/opt/ASAP/lib:$LD_LIBRARY_PATH
+export PYTHONPATH=/work/grana_urologia/MONKEY_challenge/asap/opt/ASAP/lib/python3.8/site-packages:$PYTHONPATH
+
 echo "== Environment activated! =="
 
 echo "== Exporting environment variables... =="
