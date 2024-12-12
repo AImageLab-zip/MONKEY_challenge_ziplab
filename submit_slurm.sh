@@ -38,11 +38,13 @@ echo "========================="
 echo "== Loading modules and activating env... =="
 
 . /usr/local/anaconda3/etc/profile.d/conda.sh
+conda deactivate ##deactivate any active conda environment
 ## load the modules you need
 module unload cuda
 module load cuda/11.0 #load old cuda version
 # ## activate your virtual environment using it's path (example)
-conda activate monkey_env
+conda activate /work/grana_urologia/MONKEY_challenge/monkey_env
+#source /work/grana_urologia/MONKEY_challenge/monkey_env/bin/activate
 
 echo "== Environment activated! =="
 

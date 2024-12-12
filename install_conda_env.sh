@@ -1,19 +1,20 @@
 #!/bin/bash
 
-
-###NOTE: It will install the conda env in your HOME directory!!!! It will weight at least 5/6 GB of space
-# Check if conda is installed
+##NOTE: It will install the conda env in the project root directory!!!
+Check if conda is installed
 if ! command -v conda &> /dev/null
 then
     echo "conda could not be found. Make sure it is installed and accessible."
     exit 1
 fi
 
-# Environment name
+# Environment name and paths
 ENV_NAME="monkey_env"
 ENV_FILE="env.yml"
+PROJECT_ROOT="$(dirname "$0")"
+ENV_PATH="$PROJECT_ROOT/$ENV_NAME"
 
-echo "Creating the conda environment from $ENV_FILE..."
+echo "Creating the conda environment in the project root directory: $ENV_PATH..."
 
 # Check if env.yml exists
 if [ ! -f "$ENV_FILE" ]; then
@@ -21,8 +22,8 @@ if [ ! -f "$ENV_FILE" ]; then
     exit 1
 fi
 
-# Create conda environment from env.yml
-conda env create -f "$ENV_FILE" --name "$ENV_NAME"
+# Create conda environment from env.yml in the specified directory
+conda env create -f "$ENV_FILE" --prefix "$ENV_PATH"
 
 if [ $? -ne 0 ]; then
     echo "Failed to create the conda environment."
@@ -32,8 +33,8 @@ fi
 echo "Deactivating any active conda environments..."
 conda deactivate
 
-echo "Activating the new environment: $ENV_NAME..."
-conda activate "$ENV_NAME"
+echo "Activating the new environment at: $ENV_PATH..."
+conda activate "$ENV_PATH"
 
 # Ensure pip is installed in the new environment
 if ! command -v pip &> /dev/null; then
@@ -67,4 +68,4 @@ else
     echo "requirements.txt not found. Skipping."
 fi
 
-echo "All installations completed successfully in the environment: $ENV_NAME!"
+echo "All installations completed successfully in the environment at: $ENV_PATH!"
