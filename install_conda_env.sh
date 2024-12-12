@@ -1,6 +1,5 @@
 #!/bin/bash
 
-##NOTE: It will install the conda env in the project root directory!!!
 Check if conda is installed
 if ! command -v conda &> /dev/null
 then
