@@ -14,6 +14,7 @@ shapely==1.8.1 #downgrade to try to fix the error on xml creation (see https://g
 psutil
 monai
 colour
+wandb
 # development dependencies
 black
 isort
