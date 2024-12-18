@@ -2,14 +2,15 @@
 FROC curve plotting function that can be used with metrics.json file that is downloaded from Grand-challenge platform.
 Adapted form https://github.com/computationalpathologygroup/evaluation-tools/blob/main/src/cpg_evaluation_tools/plotting/froc.py
 """
+
+import argparse
+import json
 import os.path
 
+import matplotlib.pyplot as plt
 import numpy as np
 import seaborn as sns
 from sklearn.utils._plotting import _BinaryClassifierCurveDisplayMixin
-import argparse
-import json
-import matplotlib.pyplot as plt
 
 
 class FrocCurveDisplay(_BinaryClassifierCurveDisplayMixin):
@@ -132,7 +133,7 @@ class FrocCurveDisplay(_BinaryClassifierCurveDisplayMixin):
             while len(xticks) > 7:
                 xtick_step = next(other_possible_xticks_steps)
                 xticks = list(
-                    range(0, max(xticks)+ xtick_step, xtick_step)
+                    range(0, max(xticks) + xtick_step, xtick_step)
                     # range(0, int(self.fps.max() + xtick_step), xtick_step)
                 )
         self.ax_.set(
@@ -192,17 +193,30 @@ def plot_froc(
     # Add vertical lines at eval_thresholds
     if froc_thresholds is not None:
         for threshold in froc_thresholds:
-            ax.axvline(x=threshold, color='gray', linestyle='--', alpha=0.7)
+            ax.axvline(x=threshold, color="gray", linestyle="--", alpha=0.7)
 
     return disp
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Plot FROC curve")
-    parser.add_argument("input_path", type=str, help="Path to the file or folder with metrics json files"
-                                                     "from Grand-challenge.")
-    parser.add_argument("output_path", type=str, help="Path to the output folder to save the FROC curve plot.")
-    parser.add_argument("--per-file", type=bool, default=False, help="If set, the per slide FROC curves will also be plotted.")
+    parser.add_argument(
+        "input_path",
+        type=str,
+        help="Path to the file or folder with metrics json files"
+        "from Grand-challenge.",
+    )
+    parser.add_argument(
+        "output_path",
+        type=str,
+        help="Path to the output folder to save the FROC curve plot.",
+    )
+    parser.add_argument(
+        "--per-file",
+        type=bool,
+        default=False,
+        help="If set, the per slide FROC curves will also be plotted.",
+    )
     args = parser.parse_args()
     input_path = args.input_path
     output_path = args.output_path
@@ -212,48 +226,48 @@ if __name__ == "__main__":
     # output_path = 'example_files/'
     # plot_per_file = False
 
-    with open(input_path, 'r') as f:
+    with open(input_path, "r") as f:
         metric_dict = json.load(f)
 
     fig, ax = plt.subplots(figsize=(10, 8))
-    for cell_type, metrics in metric_dict['aggregates'].items():
+    for cell_type, metrics in metric_dict["aggregates"].items():
         # Plot the FROC curve for each cell type on the same axis
         disp = plot_froc(
-            fps=np.array(metrics['fp_per_mm2_aggr']),
-            total_sensitivity=np.array(metrics['sensitivity_aggr']),
+            fps=np.array(metrics["fp_per_mm2_aggr"]),
+            total_sensitivity=np.array(metrics["sensitivity_aggr"]),
             name=cell_type,
             froc_thresholds=eval_thresholds,
-            ax=ax
+            ax=ax,
         )
 
     # Customize the shared plot
-    ax.set_title('Aggregated FROC curves')
-    ax.legend(loc='lower right')
+    ax.set_title("Aggregated FROC curves")
+    ax.legend(loc="lower right")
     plt.tight_layout()
 
     # Show and save the figure
     plt.show()
-    plt.savefig(os.path.join(output_path, 'froc_curves_aggregated.png'))
+    plt.savefig(os.path.join(output_path, "froc_curves_aggregated.png"))
 
     if plot_per_file:
-        for file_id, file_metrics in metric_dict['per_slide'].items():
+        for file_id, file_metrics in metric_dict["per_slide"].items():
             # plot the froc curve
             fig, ax = plt.subplots(figsize=(10, 8))
-            for cell_type, metrics in metric_dict['aggregates'].items():
+            for cell_type, metrics in metric_dict["aggregates"].items():
                 # Plot the FROC curve for each cell type on the same axis
                 disp = plot_froc(
-                    fps=np.array(metrics['fp_per_mm2_aggr']),
-                    total_sensitivity=np.array(metrics['sensitivity_aggr']),
+                    fps=np.array(metrics["fp_per_mm2_aggr"]),
+                    total_sensitivity=np.array(metrics["sensitivity_aggr"]),
                     name=cell_type,
                     froc_thresholds=eval_thresholds,
-                    ax=ax
+                    ax=ax,
                 )
 
             # Customize the shared plot
-            ax.set_title(f'FROC Curves for image {file_id}')
-            ax.legend(loc='lower right')
+            ax.set_title(f"FROC Curves for image {file_id}")
+            ax.legend(loc="lower right")
             plt.tight_layout()
 
             # Show and save the figure
             plt.show()
-            plt.savefig(os.path.join(output_path, f'froc_curves_{file_id}.png'))
+            plt.savefig(os.path.join(output_path, f"froc_curves_{file_id}.png"))

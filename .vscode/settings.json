@@ -1,13 +1,12 @@
 {
-    "python.formatting.provider": "black",
     "[python]": {
         "editor.formatOnSave": true,
+        "editor.defaultFormatter": "charliermarsh.ruff",
         "editor.codeActionsOnSave": {
             "source.organizeImports": "explicit"
+        },
+        "notebook.codeActionsOnSave": {
+            "notebook.source.organizeImports": "explicit"
         }
     },
-    "editor.codeActionsOnSave": {
-        "source.organizeImports": "explicit"
-    },
-    "python.sortImports.path": "/venv/bin/isort"
 }

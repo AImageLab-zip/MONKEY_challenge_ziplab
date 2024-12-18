@@ -1,0 +1,57 @@
+project:
+  name: "monkey_challenge_ziplab"
+  log_dir: "./logs/scripts"
+  output_dir: "./model_results"
+  timestamp: "auto"
+  seed: 42
+  continue_training: False
+  file_log: False
+  wandb_model_watch: True
+  img_save_dir_path: "./imgs"
+  model_save_dir_path: null
+
+dataset:
+  name: "monkey_dataset"
+  path: "../data/monkey-data"
+  # valid_ratio: 0.15
+  # test_ratio: 0.2
+  # resize_dims: 512
+  # #stratify_by: "tumor"
+  # #drop_none_class: False #original dataset as it is
+  # #split_by_wsi: False #no splitting by wsi, will have more balanced data but produce a bit of data leakage
+  # augs: "none"
+  # normalize: False #no normalization to test the effect of it later
+
+model:
+  name: "detectron2" #simplest nn we will use to start with
+  #pretrained: False #no pretraining, testing what happens with non initialized weights
+  #freeze_all_layers: False #no layer freezing, we need to train every layer
+  #amount_frozen_layers: 0
+
+optimizer:
+  #name: "Adam" #trying Adam
+  #weighted_loss: False #testing what happens if no wl with huge class imbalance
+
+training:
+  # learning_rate: 0.0003 #standard lr for adams to start with?
+  # epochs: 10 #testing only on few epochs
+  # batch_size: 64 #a good batch size so we don't have an "out of memory" even with a 16 gpu
+  # weighted_classes: False #no batch balancing for now
+  # label_threshold: 0.5
+  # evaluate_every: 1
+  # binary_classes: True #simplest case (tumor vs non-tumor)
+
+patchifier:
+  # wsi_data_path: "/work/grana_urologia/WSI-data"
+  # wsi_geojson_path: "/work/grana_urologia/wsi_geojson_data"
+  # output_patches_path: "/work/grana_urologia/WSI_patches"
+  # patchifier_patch_size: 512
+  # max_patch_background: 0.8
+  # label_min_area_intersection: 0.05 #5% min of label area to label the patch - maybe this is too low?
+  # use_otsu: False
+  # use_contour_approx: True
+  # save_mask_patches: True
+  # save_annot_patches: True
+
+other:
+  # for future use

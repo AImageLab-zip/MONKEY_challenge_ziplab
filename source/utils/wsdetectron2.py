@@ -23,7 +23,6 @@ class BatchPredictor(DefaultPredictor):
     """Run d2 on a list of images."""
 
     def __call__(self, images):
-
         input_images = []
         for image in images:
             # Apply pre-processing to image.
@@ -50,13 +49,12 @@ class Detectron2DetectionPredictor:
             )
         )
 
-
         cfg.DATASETS.TRAIN = ("detection_dataset2",)
         cfg.DATASETS.TEST = ()
         cfg.DATALOADER.NUM_WORKERS = 1
 
         cfg.MODEL.ROI_HEADS.BATCH_SIZE_PER_IMAGE = 512
-        cfg.MODEL.ROI_HEADS.NUM_CLASSES = 2 #was 1!
+        cfg.MODEL.ROI_HEADS.NUM_CLASSES = 2  # was 1!
         cfg.MODEL.ANCHOR_GENERATOR.SIZES = [[16, 24, 32]]
 
         cfg.SOLVER.IMS_PER_BATCH = 10
@@ -67,13 +65,10 @@ class Detectron2DetectionPredictor:
         cfg.SOLVER.GAMMA = 0.5
         ###
 
-
-
         cfg.OUTPUT_DIR = str(output_dir)
         os.makedirs(output_dir, exist_ok=True)
 
         cfg.MODEL.WEIGHTS = weight_root
-        
 
         cfg.MODEL.ROI_HEADS.SCORE_THRESH_TEST = threshold
         cfg.MODEL.ROI_HEADS.NMS_THRESH_TEST = nms_threshold

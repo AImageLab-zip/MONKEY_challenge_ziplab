@@ -2,15 +2,18 @@ import os
 import random
 
 import cv2
+
 # import matplotlib.patches as patches
 import matplotlib.pyplot as plt
 import numpy as np
+
 # import seaborn as sns
 import torch
 import wandb
 
 # from torch.utils.data import DataLoader
 # from tqdm import tqdm
+
 
 def set_seed(seed):
     """
@@ -25,6 +28,7 @@ def set_seed(seed):
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = False
 
+
 def get_device() -> torch.device:
     """
     Returns the device (GPU or CPU) that will be used for computation.
@@ -33,6 +37,7 @@ def get_device() -> torch.device:
         torch.device: The device to be used for computation.
     """
     return torch.device("cuda:0") if torch.cuda.is_available() else torch.device("cpu")
+
 
 def initialize_wandb(args, use_wandb=True):
     """
@@ -48,9 +53,7 @@ def initialize_wandb(args, use_wandb=True):
     if use_wandb is False:
         os.environ["WANDB_MODE"] = "disabled"
         os.environ["WANDB_DISABLED"] = "true"
-        print(
-            "Flag 'use_wandb' is set to False, WanDB will be disabled for this run!"
-        )
+        print("Flag 'use_wandb' is set to False, WanDB will be disabled for this run!")
     else:
         print("Using WandB - Initializing run...")
 
@@ -68,8 +71,6 @@ def initialize_wandb(args, use_wandb=True):
     return wandb
 
 
-
-
 def tensor_to_numpy_img(img: torch.Tensor):
     """
     Convert a PyTorch tensor image to a NumPy array image.
@@ -81,6 +82,7 @@ def tensor_to_numpy_img(img: torch.Tensor):
         numpy.ndarray: The converted NumPy array image.
     """
     return img.permute(1, 2, 0).cpu().numpy()
+
 
 def save_tensor_image(image, name):
     """

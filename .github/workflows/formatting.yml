@@ -22,10 +22,10 @@ jobs:
 
       - name: Install Dependencies
         run: |
-          pip install black "black[jupyter]" isort
+          pip install ruff isort
 
       - name: Run Isort
         run: isort .
 
-      - name: Run Black
-        run: black .
+      - name: Run Ruff
+        run: ruff .

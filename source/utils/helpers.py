@@ -115,21 +115,16 @@ def _pool_worker(*, fn, predictions, max_workers, results, errors):
             def sigchld_handler(*_, **__):
                 if not terminating_child_processes:
                     handle_error(
-                        RuntimeError(
-                            "Child process was terminated unexpectedly"
-                        )
+                        RuntimeError("Child process was terminated unexpectedly")
                     )
 
             # Register the SIGCHLD handler
             signal.signal(signal.SIGCHLD, sigchld_handler)
 
             # Submit the processing tasks of the predictions
-            futures = [
-                executor.submit(fn, prediction) for prediction in predictions
-            ]
+            futures = [executor.submit(fn, prediction) for prediction in predictions]
             future_to_predictions = {
-                future: item
-                for future, item in zip(futures, predictions, strict=True)
+                future: item for future, item in zip(futures, predictions, strict=True)
             }
 
             for future in as_completed(future_to_predictions):
