@@ -92,9 +92,10 @@ def get_args_and_config():
 
     config = load_yaml(config_path, logger)
 
-    formatted_loaded_args = pprint.pformat(args, indent=4)
+    formatted_loaded_args = pprint.pformat(vars(args), indent=4)
+    formatted_config = pprint.pformat(config, indent=4)
     logger.info(
-        f"Load of args completed!\nLoaded the following configuration:\n{formatted_loaded_args}\n{'='*10}"
+        f"Load of args and config completed!\nLoaded the following args:\n{formatted_loaded_args}\nLoaded the following configs:\n{formatted_config}\n{'='*10}"
     )
 
     return args, config
