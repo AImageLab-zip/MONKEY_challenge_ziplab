@@ -1,3 +1,9 @@
+import os
+
+from utils.config_parser import get_args_and_config
+from utils.data_preparation import create_bboxes_annots
+
+
 def test_torch():
     """
     Test if torch is installed and working with GPU
@@ -10,4 +16,9 @@ def test_torch():
 
 
 if __name__ == "__main__":
-    test_torch()
+    # test_torch()
+
+    # print(os.getcwd())
+    args, config = get_args_and_config()
+    print(config)
+    create_bboxes_annots(config)

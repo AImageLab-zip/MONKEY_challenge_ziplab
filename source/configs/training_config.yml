@@ -8,7 +8,6 @@
             "ROI": 0,
             "lymphocytes": 1
         },
-    
         
         'batch_shape': {
             'batch_size': 10,
@@ -16,8 +15,6 @@
             'shape': [128,128,3],
             'y_shape': [1000, 6],
         },
-        
-        
         
         "annotation_parser": {
             "sample_label_names": ['roi'],

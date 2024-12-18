@@ -1,7 +1,7 @@
 project:
   name: "monkey_challenge_ziplab"
-  log_dir: "./logs/scripts"
-  output_dir: "./model_results"
+  log_dir: "../logs/scripts"
+  output_dir: "../results"
   timestamp: "auto"
   seed: 42
   continue_training: False
@@ -10,9 +10,45 @@ project:
   img_save_dir_path: "./imgs"
   model_save_dir_path: null
 
+wholeslidedata:
+  user_config: {
+      "wholeslidedata": {
+          "default": {
+              "yaml_source": "./configs/training_full.yml", #NOTE: change also the dataset yaml_wsi_wsa_path value!!!!
+              "seed": 42,
+              "image_backend": "asap",  # was openslide
+              "labels": {"ROI": 0, "lymphocytes": 1, "monocytes": 2},
+              "batch_shape": {
+                  "batch_size": 10,
+                  "spacing": 0.5,
+                  "shape": [128, 128, 3],
+                  "y_shape": [1000, 6],
+              },
+              "annotation_parser": {
+                  "sample_label_names": ["roi"],
+              },
+              "point_sampler_name": "RandomPointSampler",
+              "point_sampler": {
+                  "buffer": {"spacing": "${batch_shape.spacing}", "value": -64},
+              },
+              "patch_label_sampler_name": "DetectionPatchLabelSampler",
+              "patch_label_sampler": {
+                  "max_number_objects": 1000,
+                  "detection_labels": ["lymphocytes", "monocytes"],
+              },
+          }
+      }
+  }
+
 dataset:
   name: "monkey_dataset"
   path: "../data/monkey-data"
+  annotation_polygon_dir: "annotations_polygon" #NOTE: change also the user_config yaml_source value above!!!
+  yaml_wsi_wsa_path: "./configs/training_full.yml"
+  lymphocyte_half_box_size: 4.5  # the size of half of the bbox around the lymphocyte dot in um
+  # NOTE: reduced this to 5.0 as the eval script (it was 11.0)
+  monocytes_half_box_size: 5.0  # the size of half of the bbox around the monocytes dot in um
+  min_spacing: 0.25  # NOTE: in the eval code they use 0.24199951445730394 # spacing is the zoom level of the image, in micro-meters per pixel (was rounded to 0.25)
   # valid_ratio: 0.15
   # test_ratio: 0.2
   # resize_dims: 512
@@ -23,7 +59,7 @@ dataset:
   # normalize: False #no normalization to test the effect of it later
 
 model:
-  name: "detectron2" #simplest nn we will use to start with
+  name: "detectron2" #baseline model used in the example code of the challenge
   #pretrained: False #no pretraining, testing what happens with non initialized weights
   #freeze_all_layers: False #no layer freezing, we need to train every layer
   #amount_frozen_layers: 0
@@ -41,17 +77,6 @@ training:
   # evaluate_every: 1
   # binary_classes: True #simplest case (tumor vs non-tumor)
 
-patchifier:
-  # wsi_data_path: "/work/grana_urologia/WSI-data"
-  # wsi_geojson_path: "/work/grana_urologia/wsi_geojson_data"
-  # output_patches_path: "/work/grana_urologia/WSI_patches"
-  # patchifier_patch_size: 512
-  # max_patch_background: 0.8
-  # label_min_area_intersection: 0.05 #5% min of label area to label the patch - maybe this is too low?
-  # use_otsu: False
-  # use_contour_approx: True
-  # save_mask_patches: True
-  # save_annot_patches: True
 
 other:
   # for future use
