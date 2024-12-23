@@ -3,7 +3,7 @@ import os
 import time
 
 
-def get_logger(name, args):
+def get_logger(name, args={}):
     """
     Get a logger with the specified name and configuration.
 
