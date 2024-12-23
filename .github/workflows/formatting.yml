@@ -28,4 +28,4 @@ jobs:
         run: isort .
 
       - name: Run Ruff
-        run: ruff format .
+        run: ruff format . --exclude *.ipynb
