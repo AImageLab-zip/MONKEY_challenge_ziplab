@@ -6,14 +6,12 @@ import yaml
 from sklearn.model_selection import KFold, StratifiedKFold
 from tqdm import tqdm
 
-from utils.logger import get_logger
-
 from .config_parser import get_args_and_config
 from .dot2polygon import dot2polygon
+from .logger import get_logger
+
 
 # object to aid in data preparation of the Monkey Dataset
-
-
 class DataPreparator:
     def __init__(self, config):
         # config loading
@@ -36,8 +34,12 @@ class DataPreparator:
             return -1  # TODO: implement better error handling
 
         self.dataset_dir = self.dataset_configs.get("path", "../data/monkey-data")
+        self.annotation_dir = os.path.join(self.dataset_dir, "annotations", "xml")
         self.annotation_polygon_dirname = self.config.get(
             "annotation_polygon_dir", "annotations_polygon"
+        )
+        self.annotation_polygon_dir = os.path.join(
+            self.dataset_dir, self.annotation_polygon_dirname
         )
         self.metadata_file = os.path.join(
             self.dataset_dir, "metadata", "context-information.xlsx"
@@ -79,22 +81,17 @@ class DataPreparator:
         return: 0 if successful, -1 if failed.
 
         """
-        annotation_dir = os.path.join(self.dataset_dir, "annotations", "xml")
 
-        annotation_list = glob.glob(os.path.join(annotation_dir, "*.xml"))
+        annotation_list = glob.glob(os.path.join(self.annotation_dir, "*.xml"))
 
-        annotation_polygon_dir = os.path.join(
-            self.dataset_dir, self.annotation_polygon_dirname
-        )
-
-        if not (os.path.isdir(annotation_polygon_dir)):
-            os.mkdir(annotation_polygon_dir)
+        if not (os.path.isdir(self.annotation_polygon_dir)):
+            os.mkdir(self.annotation_polygon_dir)
 
         loading_bar = tqdm(annotation_list, desc="Creating bounding boxes annotations")
 
         for xml_path in loading_bar:
             output_path = os.path.join(
-                annotation_polygon_dir,
+                self.annotation_polygon_dir,
                 os.path.splitext(os.path.basename(xml_path))[0]
                 + "_polygon"
                 + os.path.splitext(os.path.basename(xml_path))[1],
@@ -135,7 +132,7 @@ class DataPreparator:
 
         # Define directories for annotation and image files
         wsa_dir = (
-            f"{self.annotation_polygon_dirname}" + r"/*_polygon.xml"
+            f"{self.annotation_polygon_dir}" + r"/*_polygon.xml"
         )  # Annotation files
         wsi_pas_cpg_dir = os.path.join(
             self.dataset_dir, "images", "pas-cpg"
@@ -206,10 +203,12 @@ class DataPreparator:
                 # Log if no match is found for the patient
                 print("No match found:    ", patient_name)
 
-            # add a total cell count column and quantile bins for the immune cells
-            self.dataset_df = self._create_quantile_bins_cells(
-                self.dataset_df, n_bins=self.num_bins_total_cells_count
-            )
+        # add a total cell count column and quantile bins for the immune cells
+        self.dataset_df = self._create_quantile_bins_cells(
+            self.dataset_df, n_bins=self.num_bins_total_cells_count
+        )
+
+        self.logger.debug(f"Dataset firs rows:\n{self.dataset_df.head()}\n")
 
         return self.dataset_df
 
@@ -310,7 +309,8 @@ class DataPreparator:
         # 3. Split the data into n folds and save to n .yml files in the specified directory
         dataset_df, folds_paths_dict = self.split_and_save_kfold()
 
-        return dataset_df, folds_paths_dict
+        # return dataset_df, folds_paths_dict
+
 
 # def folders_to_yml(wsi_dir: str, wsa_dir: str, output_dir: str, output_name: str):
 #     """
