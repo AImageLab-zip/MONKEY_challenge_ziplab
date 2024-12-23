@@ -3,6 +3,7 @@ import os
 
 import pandas as pd
 import yaml
+from sklearn.model_selection import KFold, StratifiedKFold
 from tqdm import tqdm
 
 from .config_parser import get_args_and_config
@@ -164,6 +165,28 @@ def create_dataset_df(dataset_path: str, annotations_path: str):
     return metadata_df
 
 
+def create_quantile_bins(dataset_df, n_bins=5):
+    """
+    Create bins based on quantiles of the total cell count.
+
+    Parameters:
+        dataset_df (pd.DataFrame): The input dataframe.
+        n_bins (int): Number of bins (quantiles).
+
+    Returns:
+        pd.DataFrame: The dataframe with a new 'immune_cell_bin' column.
+    """
+    dataset_df = dataset_df.copy()
+    dataset_df["Total_cells"] = (
+        dataset_df["Nb_lymphocytes"] + dataset_df["Nb_monocytes"]
+    )
+
+    dataset_df["immune_cell_bin"] = pd.qcut(
+        dataset_df["Total_cells"], q=n_bins, labels=range(n_bins)
+    )
+    return dataset_df
+
+
 def folders_to_yml(wsi_dir: str, wsa_dir: str, output_dir: str, output_name: str):
     """
     Generate a yaml file to be used as WSD dataconfig from a folder of slides and a folder of annotation or mask files.
@@ -200,6 +223,74 @@ def folders_to_yml(wsi_dir: str, wsa_dir: str, output_dir: str, output_name: str
     with open(os.path.join(output_dir, output_name), "w") as file:
         yaml.safe_dump(yaml_dict, file)
 
+
+def split_and_save_kfold(
+    dataset_df: pd.DataFrame,
+    n_folds=5,
+    wsi_col="WSI PAS_CPG Path",
+    wsa_col="Annotation Path",
+    balance_by=None,
+    output_dir="./configs/splits",
+    seed=42,
+):
+    """
+    Split the data into n folds, save to .yml files with training and validation keys,
+    and add fold ID to the dataframe.
+
+    Parameters:
+        dataset_df (pd.DataFrame): The input dataframe with WSI paths and metadata.
+        n_folds (int): Number of folds for the split.
+        wsi_col (str): Column name for the WSI paths.
+        wsa_col (str): Column name for the annotation paths.
+        balance_by (str or None): Column to balance the split ('class' or 'immune_cells').
+        output_dir (str): Directory to save the generated .yml files.
+
+    Returns:
+        pd.DataFrame: The input dataframe with an additional 'fold_id' column.
+    """
+    # Make the output directory if not present
+    os.makedirs(output_dir, exist_ok=True)
+
+    # Add a fold_id column initialized to -1
+    dataset_df = dataset_df.copy()
+    dataset_df["fold_id"] = -1
+
+    # Choose the splitter
+    if balance_by and balance_by in dataset_df.columns:
+        skf = StratifiedKFold(n_splits=n_folds, shuffle=True, random_state=seed)
+        stratify_col = dataset_df[balance_by]
+    else:
+        # Use random non-stratified splitter if no column is specified
+        skf = KFold(n_splits=n_folds, shuffle=True, random_state=seed)
+        stratify_col = None
+
+    # Split the data
+    for fold, (train_idx, test_idx) in enumerate(skf.split(dataset_df, stratify_col)):
+        train_data = dataset_df.iloc[train_idx]
+        validation_data = dataset_df.iloc[test_idx]
+
+        # Assign fold IDs to the dataframe
+        dataset_df.loc[test_idx, "fold_id"] = fold
+
+        # Format data for YAML
+        train_yaml = [
+            {"wsa": {"path": row[wsa_col]}, "wsi": {"path": row[wsi_col]}}
+            for _, row in train_data.iterrows()
+        ]
+        validation_yaml = [
+            {"wsa": {"path": row[wsa_col]}, "wsi": {"path": row[wsi_col]}}
+            for _, row in validation_data.iterrows()
+        ]
+
+        fold_type = f"balanced_{balance_by}_" if balance_by else ""
+        # Save YAML files
+        fold_file = os.path.join(output_dir, f"fold_{fold_type}{fold}.yml")
+        with open(fold_file, "w") as f:
+            yaml.dump({"training": train_yaml, "validation": validation_yaml}, f)
+
+        print(f"Fold {fold + 1} saved -> {fold_file}")
+
+    return dataset_df
 
 if __name__ == "__main__":
     args, config = get_args_and_config()
