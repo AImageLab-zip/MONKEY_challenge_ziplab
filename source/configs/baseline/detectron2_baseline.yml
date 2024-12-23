@@ -44,7 +44,9 @@ dataset:
   name: "monkey_dataset"
   path: "../data/monkey-data"
   annotation_polygon_dir: "annotations_polygon" #NOTE: change also the user_config yaml_source value above!!!
-  yaml_wsi_wsa_path: "./configs/training_full.yml"
+  yaml_wsi_wsa_dir: "./configs/splits/"
+  wsi_col: "WSI PAS_CPG Path"
+  was_col: "Annotation Path"
   lymphocyte_half_box_size: 4.5  # the size of half of the bbox around the lymphocyte dot in um
   # NOTE: reduced this to 5.0 as the eval script (it was 11.0)
   monocytes_half_box_size: 5.0  # the size of half of the bbox around the monocytes dot in um
