@@ -44,18 +44,18 @@ dataset:
   name: "monkey_dataset"
   path: "../data/monkey-data"
   annotation_polygon_dir: "annotations_polygon" #NOTE: change also the user_config yaml_source value above!!!
-  yaml_wsi_wsa_dir: "./configs/splits/"
-  wsi_col: "WSI PAS_CPG Path"
-  was_col: "Annotation Path"
+  yaml_wsi_wsa_dir: "./configs/splits/" #where to save the yaml splits files
+  n_folds: 5 #number of folds for the k-folds splits
+  balance_by: None #balance folds using a column name from the data dataframe
+  wsi_col: "WSI PAS_CPG Path" # column to use in the dataframe
+  was_col: "Annotation Path" # column 
   lymphocyte_half_box_size: 4.5  # the size of half of the bbox around the lymphocyte dot in um
   # NOTE: reduced this to 5.0 as the eval script (it was 11.0)
   monocytes_half_box_size: 5.0  # the size of half of the bbox around the monocytes dot in um
   min_spacing: 0.25  # NOTE: in the eval code they use 0.24199951445730394 # spacing is the zoom level of the image, in micro-meters per pixel (was rounded to 0.25)
+  num_bins_total_cells_count: 5 # bins to use to make a total cell count ordinal feature for dataset balanced splits
   # valid_ratio: 0.15
   # test_ratio: 0.2
-  # resize_dims: 512
-  # #stratify_by: "tumor"
-  # #drop_none_class: False #original dataset as it is
   # #split_by_wsi: False #no splitting by wsi, will have more balanced data but produce a bit of data leakage
   # augs: "none"
   # normalize: False #no normalization to test the effect of it later

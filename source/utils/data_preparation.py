@@ -68,7 +68,9 @@ class DataPreparator:
         self.balance_by = self.dataset_configs.get("balance_by", None)
 
         # bins number for total cells count to balance the dataset in the folds (optionally)
-        self.num_bins_total_cells_count = 5
+        self.num_bins_total_cells_count = self.dataset_configs.get(
+            "num_bins_total_cells_count", 5
+        )
 
         # dataset dataframe with wsi metadata
         self.dataset_df = None
