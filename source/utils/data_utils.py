@@ -62,7 +62,6 @@ def initialize_wandb(args, use_wandb=True):
         name=f"{args.model}-lr_{args.lr}-batch_{args.batch_size}-epochs_{args.epochs}-augs_{args.augs}-{args.timestamp}",
         group=args.model,
         tags=[
-            "baseline",
             f"model:{args.model}",
         ],
         config=args,

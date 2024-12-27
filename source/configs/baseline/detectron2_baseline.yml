@@ -1,8 +1,9 @@
 project:
   name: "monkey_challenge_ziplab"
   log_dir: "../logs/scripts"
-  output_dir: "../results"
+  output_dir: "../outputs"
   timestamp: "auto"
+  num_workers: "auto"
   seed: 42
   continue_training: False
   file_log: False
@@ -14,7 +15,7 @@ wholeslidedata:
   user_config: {
       "wholeslidedata": {
           "default": {
-              "yaml_source": "./configs/training_full.yml", #NOTE: change also the dataset yaml_wsi_wsa_path value!!!!
+              "yaml_source": "", #NOTE: refer to the dataset yaml_wsi_wsa_path value!!!!
               "seed": 42,
               "image_backend": "asap",  # was openslide
               "labels": {"ROI": 0, "lymphocytes": 1, "monocytes": 2},
