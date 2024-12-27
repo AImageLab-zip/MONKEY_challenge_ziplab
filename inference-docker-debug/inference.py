@@ -38,11 +38,13 @@ from wsdetectron2 import Detectron2DetectionPredictor
 def run():
     # Read the input
 
-    image_paths = glob(os.path.join(INPUT_PATH, "images/kidney-transplant-biopsy-wsi-pas/*.tif"))
+    image_paths = glob(
+        os.path.join(INPUT_PATH, "images/kidney-transplant-biopsy-wsi-pas/*.tif")
+    )
     mask_paths = glob(os.path.join(INPUT_PATH, "images/tissue-mask/*.tif"))
 
-    image_path = image_paths[0] #select first image for the patient (?)
-    mask_path = mask_paths[0] #select first ROI file mask for the patient (?)
+    image_path = image_paths[0]  # select first image for the patient (?)
+    mask_path = mask_paths[0]  # select first ROI file mask for the patient (?)
 
     output_path = OUTPUT_PATH
     json_filename_lymphocytes = "detected-lymphocytes.json"
@@ -57,24 +59,28 @@ def run():
     offset = (0, 0)
     center = False
 
-    patch_configuration = PatchConfiguration(patch_shape=patch_shape,
-                                             spacings=spacings,
-                                             overlap=overlap,
-                                             offset=offset,
-                                             center=center)
+    patch_configuration = PatchConfiguration(
+        patch_shape=patch_shape,
+        spacings=spacings,
+        overlap=overlap,
+        offset=offset,
+        center=center,
+    )
 
     model = Detectron2DetectionPredictor(
         output_dir=output_path,
         threshold=0.1,
         nms_threshold=0.3,
-        weight_root=weight_root
+        weight_root=weight_root,
     )
 
-    iterator = create_patch_iterator(image_path=image_path,
-                                     mask_path=mask_path,
-                                     patch_configuration=patch_configuration,
-                                     cpus=4,
-                                     backend='asap')
+    iterator = create_patch_iterator(
+        image_path=image_path,
+        mask_path=mask_path,
+        patch_configuration=patch_configuration,
+        cpus=4,
+        backend="asap",
+    )
 
     # Save your output
     inference(
@@ -154,9 +160,8 @@ def inference(iterator, predictor, spacing, image_path, output_path, json_filena
 
         predictions = predictor.predict_on_batch(x_batch)
         for idx, prediction in enumerate(predictions):
-
-            c = info['x']
-            r = info['y']
+            c = info["x"]
+            r = info["y"]
 
             for detections in prediction:
                 x, y, label, confidence = detections.values()
@@ -179,9 +184,12 @@ def inference(iterator, predictor, spacing, image_path, output_path, json_filena
                     "probability": confidence,
                 }
                 output_dict_lymphocytes["points"].append(prediction_record)
-                output_dict_monocytes["points"].append(prediction_record)  # should be replaced with detected monocytes
+                output_dict_monocytes["points"].append(
+                    prediction_record
+                )  # should be replaced with detected monocytes
                 output_dict_inflammatory_cells["points"].append(
-                    prediction_record)  # should be replaced with detected inflammatory_cells
+                    prediction_record
+                )  # should be replaced with detected inflammatory_cells
 
                 annotations.append((x, y))
                 counter += 1
@@ -191,33 +199,24 @@ def inference(iterator, predictor, spacing, image_path, output_path, json_filena
 
     # saving json file for lymphocytes
     output_path_json = os.path.join(output_path, json_filename)
-    write_json_file(
-        location=output_path_json,
-        content=output_dict_lymphocytes
-    )
+    write_json_file(location=output_path_json, content=output_dict_lymphocytes)
     # saving json file for monocytes
     json_filename_monocytes = "detected-monocytes.json"
     # it should be replaced with correct json files
     output_path_json = os.path.join(output_path, json_filename_monocytes)
-    write_json_file(
-        location=output_path_json,
-        content=output_dict_monocytes
-    )
+    write_json_file(location=output_path_json, content=output_dict_monocytes)
     # saving json file for overall inflammatory cells (lymphocytes + monocytes)
     json_filename_inflammatory_cells = "detected-inflammatory-cells.json"
     # it should be replaced with correct json files
     output_path_json = os.path.join(output_path, json_filename_inflammatory_cells)
-    write_json_file(
-        location=output_path_json,
-        content=output_dict_inflammatory_cells
-    )
+    write_json_file(location=output_path_json, content=output_dict_inflammatory_cells)
 
     print("finished!")
 
 
 def write_json_file(*, location, content):
     # Writes a json file
-    with open(location, 'w') as f:
+    with open(location, "w") as f:
         f.write(json.dumps(content, indent=4))
 
 
