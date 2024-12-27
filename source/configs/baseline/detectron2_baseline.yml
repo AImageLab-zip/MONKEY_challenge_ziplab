@@ -1,8 +1,9 @@
 project:
   name: "monkey_challenge_ziplab"
   log_dir: "../logs/scripts"
-  output_dir: "../results"
+  output_dir: "../outputs"
   timestamp: "auto"
+  num_workers: "auto"
   seed: 42
   continue_training: False
   file_log: False
@@ -14,7 +15,7 @@ wholeslidedata:
   user_config: {
       "wholeslidedata": {
           "default": {
-              "yaml_source": "./configs/training_full.yml", #NOTE: change also the dataset yaml_wsi_wsa_path value!!!!
+              "yaml_source": "", #NOTE: refer to the dataset yaml_wsi_wsa_path value!!!!
               "seed": 42,
               "image_backend": "asap",  # was openslide
               "labels": {"ROI": 0, "lymphocytes": 1, "monocytes": 2},
@@ -31,6 +32,35 @@ wholeslidedata:
               "point_sampler": {
                   "buffer": {"spacing": "${batch_shape.spacing}", "value": -64},
               },
+              # "sample_callbacks": [
+              #   # NOTE we can use the sample callbacks to apply transformations to the patches!
+              #   {
+              #       "*object": "wholeslidedata.interoperability.albumentations.callbacks.AlbumentationsDetectionSampleCallback",
+              #       "augmentations": [
+              #           {"RandomRotate90": {}},
+              #           # {"Flip": {"p": 0.5}},
+              #           {"D4": {}},
+              #           # { #NOTE: caused crash because bbox number would change given the crop!
+              #           #     "ShiftScaleRotate": {
+              #           #         "shift_limit": 0.05,
+              #           #         "scale_limit": 0.05,
+              #           #         "rotate_limit": 15,
+              #           #         "p": 0.5,
+              #           #     }
+              #           # },
+              #           # NOTE: we can use BBoxSafeRandomCrop to ensure that the bbox is not cropped out of the image!
+              #           {"Blur": {"blur_limit": 3, "p": 0.3}},
+              #           {
+              #               "HueSaturationValue": {
+              #                   "hue_shift_limit": 20,
+              #                   "sat_shift_limit": 30,
+              #                   "val_shift_limit": 20,
+              #                   "p": 0.3,
+              #               }
+              #           },
+              #       ],
+              #   },
+              # ],
               "patch_label_sampler_name": "DetectionPatchLabelSampler",
               "patch_label_sampler": {
                   "max_number_objects": 1000,
@@ -62,7 +92,7 @@ dataset:
 
 model:
   name: "detectron2" #baseline model used in the example code of the challenge
-  #pretrained: False #no pretraining, testing what happens with non initialized weights
+  pretrained: False #no pretraining, testing what happens with non initialized weights
   #freeze_all_layers: False #no layer freezing, we need to train every layer
   #amount_frozen_layers: 0
 
