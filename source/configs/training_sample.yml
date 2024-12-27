@@ -1,5 +1,0 @@
-training:
-- wsa:
-    path: ./data_debug/annotations_polygon/A_P000001_polygon.xml
-  wsi:
-    path: ./data_debug/images/pas-cpg/A_P000001_PAS_CPG.tif

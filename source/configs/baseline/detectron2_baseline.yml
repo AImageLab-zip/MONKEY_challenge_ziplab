@@ -62,7 +62,7 @@ dataset:
 
 model:
   name: "detectron2" #baseline model used in the example code of the challenge
-  #pretrained: False #no pretraining, testing what happens with non initialized weights
+  pretrained: False #no pretraining, testing what happens with non initialized weights
   #freeze_all_layers: False #no layer freezing, we need to train every layer
   #amount_frozen_layers: 0
 
