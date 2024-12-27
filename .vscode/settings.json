@@ -1,4 +1,5 @@
 {
+    
     "[python]": {
         "editor.formatOnSave": true,
         "editor.defaultFormatter": "charliermarsh.ruff",
@@ -9,4 +10,5 @@
             "notebook.source.organizeImports": "explicit"
         }
     },
+    
 }
