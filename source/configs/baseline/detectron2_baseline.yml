@@ -20,7 +20,7 @@ wholeslidedata:
               "image_backend": "asap",  # was openslide
               "labels": {"ROI": 0, "lymphocytes": 1, "monocytes": 2},
               "batch_shape": {
-                  "batch_size": 10,
+                  "batch_size": 10, #also change the training batch size config with the same number
                   "spacing": 0.5,
                   "shape": [128, 128, 3],
                   "y_shape": [1000, 6],
@@ -71,10 +71,11 @@ wholeslidedata:
   }
 
 dataset:
-  name: "monkey_dataset"
+  name: "monkey_dataset_v0"
   path: "../data/monkey-data"
   annotation_polygon_dir: "annotations_polygon" #NOTE: change also the user_config yaml_source value above!!!
   yaml_wsi_wsa_dir: "./configs/splits/" #where to save the yaml splits files
+  num_classes: 2 # lymphocytes + monocytes
   n_folds: 5 #number of folds for the k-folds splits
   balance_by: None #balance folds using a column name from the data dataframe
   wsi_col: "WSI PAS_CPG Path" # column to use in the dataframe
@@ -87,12 +88,13 @@ dataset:
   # valid_ratio: 0.15
   # test_ratio: 0.2
   # #split_by_wsi: False #no splitting by wsi, will have more balanced data but produce a bit of data leakage
-  # augs: "none"
+  #augs: "none"
   # normalize: False #no normalization to test the effect of it later
 
 model:
   name: "detectron2" #baseline model used in the example code of the challenge
-  pretrained: False #no pretraining, testing what happens with non initialized weights
+  config_url: "COCO-Detection/faster_rcnn_X_101_32x8d_FPN_3x.yaml"
+  pretrained: True #no pretraining, testing what happens with non initialized weights
   #freeze_all_layers: False #no layer freezing, we need to train every layer
   #amount_frozen_layers: 0
 
@@ -101,9 +103,10 @@ optimizer:
   #weighted_loss: False #testing what happens if no wl with huge class imbalance
 
 training:
-  # learning_rate: 0.0003 #standard lr for adams to start with?
-  # epochs: 10 #testing only on few epochs
-  # batch_size: 64 #a good batch size so we don't have an "out of memory" even with a 16 gpu
+  learning_rate: 0.0003 #standard lr for adams to start with?
+  epochs: 10 #testing only on few epochs
+  batch_size: 10 #a good batch size so we don't have an "out of memory" even with a 16 gpu
+
   # weighted_classes: False #no batch balancing for now
   # label_threshold: 0.5
   # evaluate_every: 1

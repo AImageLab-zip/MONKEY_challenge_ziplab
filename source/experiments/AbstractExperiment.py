@@ -37,10 +37,21 @@ class AbstractExperiment:
         self.output_dir = self.project_config.get("output_dir", "../outputs")
 
         # -- DATA CONFIGs -- #
+        self.wsd_config = self.config.get("wholeslidedata", {})
+        if self.wsd_config is None:
+            print(
+                "Whole Slide Data configurations not found in the configuration file."
+            )
+            return -1  # TODO: implement better error handling
+
         self.dataset_configs = self.config.get("dataset", {})
         if self.dataset_configs is None:
             print("Dataset configurations not found in the configuration file.")
             return -1  # TODO: implement better error handling
+        
+        self.num_classes = self.dataset_configs.get("num_classes", 1)
+        
+        self.dataset_name = self.dataset_configs.get("name", "default_dataset")
 
         # -- MODEL CONFIGs -- #
         self.model_config = self.config.get("model", {})
@@ -50,11 +61,21 @@ class AbstractExperiment:
 
         self.model_name = self.model_config.get("name", None)
 
+        # -- TRAINING CONFIGs -- #
+        self.training_config = self.config.get("training", {})
+        if self.training_config is None:
+            print("Training configurations not found in the configuration file.")
+            return -1
+        self.batch_size = self.wsd_config["default"].get("batch_size", 32)
+        self.learning_rate = self.training_config.get("learning_rate", 0.001)
+        self.epochs = self.training_config.get("epochs", 10)
+
         # -- CLASS STATE VARIABLES -- #
         self.data_prepator = None
         self.dataset_df = None
         self.folds_paths_dict = None
         self.model = None  # model object to store the model instance
+        self.training_batch_generator = None
 
         # set-up the optional model params and gradient watch by wand-db (if enabled)
         # self.model_watch = getattr(self.args, "wandb_model_watch", False)

@@ -311,7 +311,7 @@ class DataPreparator:
         # 3. Split the data into n folds and save to n .yml files in the specified directory
         dataset_df, folds_paths_dict = self.split_and_save_kfold()
 
-        # return dataset_df, folds_paths_dict
+        return dataset_df, folds_paths_dict
 
 
 # def folders_to_yml(wsi_dir: str, wsa_dir: str, output_dir: str, output_name: str):
