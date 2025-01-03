@@ -11,7 +11,8 @@ class AbstractExperiment:
         # -- PROJECT CONFIGs -- #
         self.args = args
         self.config = config
-        self.logger = get_logger(name=self.__class__, args=args)
+        self.logger = get_logger(name=str(self.__class__), args=args)
+
         # debug flag
         self.debug = getattr(self.args, "debug", False)
 
@@ -35,7 +36,8 @@ class AbstractExperiment:
             self.num_workers = int(os.environ.get("SLURM_CPUS_PER_TASK", 2))
 
         # -- DATA CONFIGs -- #
-        self.wsd_config = self.config.get("wholeslidedata", {})
+        self.wsd_config = self.config.get("wholeslidedata", {})["user_config"]
+        self.logger.debug(f"wsd_config: {self.wsd_config}")
         if self.wsd_config is None:
             print(
                 "Whole Slide Data configurations not found in the configuration file."
@@ -64,17 +66,19 @@ class AbstractExperiment:
         if self.training_config is None:
             print("Training configurations not found in the configuration file.")
             return -1
-        self.batch_size = self.wsd_config["default"].get("batch_size", 32)
+
+        self.batch_size = self.wsd_config["wholeslidedata"].get("batch_size", 32)
         self.learning_rate = self.training_config.get("learning_rate", 0.001)
         self.epochs = self.training_config.get("epochs", 10)
         self.continue_training = getattr(self.args, "continue_training", False)
-        if self.continue_training:
-            self.model_dir = getattr(self.args, "model_dir", None)
+
+        self.model_dir = getattr(self.args, "model_dir", None)
+
+        if self.continue_training and self.model_dir is None:
             if self.model_dir is None:
                 raise ValueError(
                     "Model directory path must be provided if continue_training is True."
                 )
-
         ### OUTPUT DIRECTORY ###
         # set up unique output directory for the experiment
         self.output_dir = self.project_config.get("output_dir", "../outputs")
@@ -111,12 +115,12 @@ class AbstractExperiment:
         self.logger.info("Training the model...")
         for fold, fold_path_dict in self.folds_paths_dict.items():
             self.logger.info(
-                "Training fold {}/{}".format(fold, len(self.folds_paths_dict))
+                "Training fold {}/{}".format(fold + 1, len(self.folds_paths_dict))
             )
             self.train_fold(fold=fold, fold_path_dict=fold_path_dict)
             self.logger.info(
                 "Training of fold {}/{} completed".format(
-                    fold, len(self.folds_paths_dict)
+                    fold + 1, len(self.folds_paths_dict)
                 )
             )
 

@@ -1,5 +1,7 @@
 import os
+import pprint
 
+import yaml
 from detectron2 import model_zoo
 from detectron2.config import get_cfg
 from detectron2.modeling import build_model
@@ -59,7 +61,8 @@ class BaselineDetectronExperiment(AbstractExperiment):
         self.cfg.SOLVER.GAMMA = 0.5  # TODO: don't hardcode this
 
         self.cfg.OUTPUT_DIR = self.output_dir
-        self.output_dir.mkdir(parents=True, exist_ok=True)
+        # create the output directory
+        os.makedirs(self.output_dir, exist_ok=True)
 
         # save the config file
         self.cfg_file = os.path.join(self.output_dir, "config.yaml")
@@ -70,7 +73,7 @@ class BaselineDetectronExperiment(AbstractExperiment):
         # check if model directory is provided else use the output directory
         if self.model_dir is not None:
             self.output_dir = self.model_dir
-        
+
         self.model_path = os.path.join(self.output_dir, f"fold_{fold}")
         # make the directory for the fold
         os.makedirs(self.model_path, exist_ok=True)
@@ -89,15 +92,31 @@ class BaselineDetectronExperiment(AbstractExperiment):
             else:
                 self.logger.info("Continuing training from existing model.")
 
-        self.fold_yaml_paths_dict = fold_path_dict
+        # load the yaml file
+        if os.path.exists(fold_path_dict):
+            with open(fold_path_dict, "r") as file:
+                self.fold_yaml_paths_dict = yaml.safe_load(file)
+                self.logger.debug(f"Loaded path files from {fold_path_dict}:")
+                config_formatted = pprint.pformat(self.fold_yaml_paths_dict, indent=4)
+                self.logger.debug(config_formatted)
+        else:
+            raise FileNotFoundError(f"File {fold_path_dict} not found.")
+
         self.fold_training_yaml_paths_dict = self.fold_yaml_paths_dict["training"]
         self.fold_validation_yaml_paths_dict = self.fold_yaml_paths_dict["validation"]
 
+        self.wsd_settings = self.wsd_config.get("wholeslidedata", {})
+
         # inject fold splits to the config dict
-        self.wsd_config["train"] = {"yaml_source": self.fold_training_yaml_paths_dict}
-        self.wsd_config["validation"] = {
+        self.wsd_settings["train"] = {"yaml_source": self.fold_training_yaml_paths_dict}
+        self.wsd_settings["validation"] = {
             "yaml_source": self.fold_validation_yaml_paths_dict
         }
+        self.wsd_settings["default"] = {
+            "yaml_source": self.fold_training_yaml_paths_dict
+        }
+
+        self.logger.debug(self.wsd_settings["train"])
 
         self.model = build_model(self.cfg)
 
