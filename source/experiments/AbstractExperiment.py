@@ -34,8 +34,6 @@ class AbstractExperiment:
         if self.num_workers == "auto":
             self.num_workers = int(os.environ.get("SLURM_CPUS_PER_TASK", 2))
 
-        self.output_dir = self.project_config.get("output_dir", "../outputs")
-
         # -- DATA CONFIGs -- #
         self.wsd_config = self.config.get("wholeslidedata", {})
         if self.wsd_config is None:
@@ -48,9 +46,9 @@ class AbstractExperiment:
         if self.dataset_configs is None:
             print("Dataset configurations not found in the configuration file.")
             return -1  # TODO: implement better error handling
-        
+
         self.num_classes = self.dataset_configs.get("num_classes", 1)
-        
+
         self.dataset_name = self.dataset_configs.get("name", "default_dataset")
 
         # -- MODEL CONFIGs -- #
@@ -69,23 +67,36 @@ class AbstractExperiment:
         self.batch_size = self.wsd_config["default"].get("batch_size", 32)
         self.learning_rate = self.training_config.get("learning_rate", 0.001)
         self.epochs = self.training_config.get("epochs", 10)
+        self.continue_training = getattr(self.args, "continue_training", False)
+        if self.continue_training:
+            self.model_dir = getattr(self.args, "model_dir", None)
+            if self.model_dir is None:
+                raise ValueError(
+                    "Model directory path must be provided if continue_training is True."
+                )
+
+        ### OUTPUT DIRECTORY ###
+        # set up unique output directory for the experiment
+        self.output_dir = self.project_config.get("output_dir", "../outputs")
+        self.experiment_name = f"{self.model_name}_e{self.epochs}_b{self.batch_size}_lr{self.learning_rate}_t{self.timestamp}"
+        self.output_dir = os.path.join(self.output_dir, self.experiment_name)
 
         # -- CLASS STATE VARIABLES -- #
         self.data_prepator = None
         self.dataset_df = None
         self.folds_paths_dict = None
+        self.fold_yaml_paths_dict = None
+        self.fold_training_yaml_paths_dict = None
+        self.fold_validation_yaml_paths_dict = None
         self.model = None  # model object to store the model instance
         self.training_batch_generator = None
 
         # set-up the optional model params and gradient watch by wand-db (if enabled)
         # self.model_watch = getattr(self.args, "wandb_model_watch", False)
 
-    def _prepare_data(self):
+    def load_data(self):
         self.data_prepator = DataPreparator(config=self.config)
         self.dataset_df, self.folds_paths_dict = self.data_prepator.prepare_data()
-
-    def load_data(self):
-        self._prepare_data()
         return self.dataset_df, self.folds_paths_dict
 
     def load_model(self):
@@ -95,6 +106,26 @@ class AbstractExperiment:
         pass
 
     def train(self):
+        self.dataset_df, self.folds_paths_dict = self.load_data()
+
+        self.logger.info("Training the model...")
+        for fold, fold_path_dict in self.folds_paths_dict.items():
+            self.logger.info(
+                "Training fold {}/{}".format(fold, len(self.folds_paths_dict))
+            )
+            self.train_fold(fold=fold, fold_path_dict=fold_path_dict)
+            self.logger.info(
+                "Training of fold {}/{} completed".format(
+                    fold, len(self.folds_paths_dict)
+                )
+            )
+
+            self.eval_fold(fold=fold, fold_path_dict=fold_path_dict)
+
+    def train_fold(self, fold, fold_path_dict):
+        pass
+
+    def eval_fold(self, fold, fold_path_dict):
         pass
 
     def test(self):

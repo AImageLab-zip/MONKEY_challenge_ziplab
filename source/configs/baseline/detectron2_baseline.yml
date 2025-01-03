@@ -15,7 +15,7 @@ wholeslidedata:
   user_config: {
       "wholeslidedata": {
           "default": {
-              "yaml_source": "", #NOTE: refer to the dataset yaml_wsi_wsa_path value!!!!
+              #"yaml_source": "", #NOTE: refer to the dataset yaml_wsi_wsa_path value!!!!
               "seed": 42,
               "image_backend": "asap",  # was openslide
               "labels": {"ROI": 0, "lymphocytes": 1, "monocytes": 2},
@@ -106,7 +106,7 @@ training:
   learning_rate: 0.0003 #standard lr for adams to start with?
   epochs: 10 #testing only on few epochs
   batch_size: 10 #a good batch size so we don't have an "out of memory" even with a 16 gpu
-
+  continue_training: False
   # weighted_classes: False #no batch balancing for now
   # label_threshold: 0.5
   # evaluate_every: 1
