@@ -74,6 +74,21 @@ def get_args_and_config():
         dest="train",
         help="If True, only test the model, skipping training. Default is False.",
     )
+    
+    parser.add_argument(
+        "--continue_training",
+        action="store_true",
+        default=False,
+        help="If True, continue training from existing model. Default is False.",
+    )
+    
+    parser.add_argument(
+        "--model_dir",
+        type=str,
+        default=None,
+        help="Path to the model directory to load the model from",
+        required=False,
+    )
 
     # Add argument for config file location
     parser.add_argument(
@@ -84,6 +99,10 @@ def get_args_and_config():
     args, _ = parser.parse_known_args()
     config_path = args.config
     logger = get_logger(name="argparser", args=args)
+    
+    #check if model path is passed if continue_training is True
+    if args.continue_training and args.model_dir is None:
+        raise ValueError("Model directory path must be provided if continue_training is True.")
 
     # Load configuration from YAML file if it exists
     logger.info(

@@ -22,4 +22,6 @@ if __name__ == "__main__":
     args, config = get_args_and_config()
     print(config)
     data_preparator = DataPreparator(config)
-    data_preparator.prepare_data()
+    dataset_df, folds_paths_dict = data_preparator.prepare_data()
+    print(dataset_df.head())
+    print(folds_paths_dict)
