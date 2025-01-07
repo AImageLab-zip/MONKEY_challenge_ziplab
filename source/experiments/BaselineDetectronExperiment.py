@@ -6,39 +6,20 @@ from detectron2 import model_zoo
 from detectron2.config import get_cfg
 from detectron2.engine import DefaultTrainer
 from detectron2.modeling import build_model
+from utils.data_utils import load_yaml, save_yaml
 from wholeslidedata.interoperability.detectron2.iterator import (
     WholeSlideDetectron2Iterator,
 )
 from wholeslidedata.interoperability.detectron2.predictor import (
     Detectron2DetectionPredictor,
 )
-
-# from wholeslidedata.interoperability.detectron2.trainer import (
-#     WholeSlideDectectron2Trainer,
-# )
+from wholeslidedata.interoperability.detectron2.trainer import (
+    WholeSlideDectectron2Trainer,
+)
 from wholeslidedata.iterators import create_batch_iterator
 
 # from wholeslidedata.visualization.plotting import plot_boxes
 from .AbstractExperiment import AbstractExperiment
-
-
-class WholeSlideDectectron2Trainer(DefaultTrainer):
-    def __init__(self, cfg, user_config, cpus):
-        self._user_config = user_config
-        self._cpus = cpus
-
-        super().__init__(cfg)
-
-    def build_train_loader(self, cfg):
-        mode = "training"
-
-        training_batch_generator = create_batch_iterator(
-            user_config=self._user_config,
-            mode=mode,
-            cpus=self._cpus,
-            iterator_class=WholeSlideDetectron2Iterator,
-        )
-        return training_batch_generator
 
 
 class BaselineDetectronExperiment(AbstractExperiment):
@@ -61,8 +42,10 @@ class BaselineDetectronExperiment(AbstractExperiment):
 
         self.cfg.SEED = self.seed  # set the seed for reproducibility
 
-        self.cfg.DATASETS.TRAIN = (self.dataset_name + "_train",)
-        self.cfg.DATASETS.TEST = (self.dataset_name + "_val",)
+        # self.cfg.DATASETS.TRAIN = (self.dataset_name + "_train",)
+        # self.cfg.DATASETS.TEST = (self.dataset_name + "_val",)
+        self.cfg.DATASETS.TRAIN = ("detection_dataset2",)
+        self.cfg.DATASETS.TEST = ()
         self.cfg.DATALOADER.NUM_WORKERS = self.num_workers
 
         self.cfg.MODEL.ROI_HEADS.BATCH_SIZE_PER_IMAGE = (
@@ -88,9 +71,7 @@ class BaselineDetectronExperiment(AbstractExperiment):
         os.makedirs(self.output_dir, exist_ok=True)
 
         # save the config file
-        self.cfg_file = os.path.join(self.output_dir, "config.yaml")
-        with open(self.cfg_file, "w") as f:
-            f.write(self.cfg.dump())
+        save_yaml(self.cfg, save_dir=self.output_dir, file_name="config.yaml")
 
     def train_fold(self, fold, fold_path_dict):
         # check if model directory is provided else use the output directory
@@ -117,30 +98,31 @@ class BaselineDetectronExperiment(AbstractExperiment):
                 self.logger.info("Continuing training from existing model.")
 
         # load the yaml file
-        if os.path.exists(fold_path_dict):
-            with open(fold_path_dict, "r") as file:
-                self.fold_yaml_paths_dict = yaml.safe_load(file)
-                self.logger.debug(f"Loaded path files from {fold_path_dict}:")
-                config_formatted = pprint.pformat(self.fold_yaml_paths_dict, indent=4)
-                self.logger.debug(config_formatted)
-        else:
-            raise FileNotFoundError(f"File {fold_path_dict} not found.")
+        self.fold_yaml_paths_dict = load_yaml(fold_path_dict)
+        if self.fold_yaml_paths_dict is None:
+            self.logger.error("Error loading fold yaml file.")
+            return -1
 
-        self.fold_training_yaml_paths_dict = self.fold_yaml_paths_dict["training"]
-        self.fold_validation_yaml_paths_dict = self.fold_yaml_paths_dict["validation"]
+        # self.fold_training_yaml_paths_dict = self.fold_yaml_paths_dict["training"]
+        # self.fold_validation_yaml_paths_dict = self.fold_yaml_paths_dict["validation"]
 
         # inject fold splits to the config dict
-        self.wsd_config["wholeslidedata"]["train"] = {
-            "yaml_source": self.fold_training_yaml_paths_dict
-        }
-        self.wsd_config["wholeslidedata"]["validation"] = {
-            "yaml_source": self.fold_validation_yaml_paths_dict
-        }
+        self.wsd_config["wholeslidedata"]["default"]["yaml_source"] = (
+            self.fold_yaml_paths_dict
+        )
+
+        # save the updated config to the model directory
+        save_yaml(
+            self.wsd_config,
+            save_dir=self.model_path,
+            file_name=f"wsd_config_fold_{fold}.yaml",
+        )
+
         # self.wsd_config["wholeslidedata"]["default"]["yaml_source"] = (
         #     self.fold_training_yaml_paths_dict
         # )
 
-        self.logger.debug(self.wsd_config["wholeslidedata"]["train"])
+        # self.logger.debug(self.wsd_config["wholeslidedata"]["train"])
 
         self.model = build_model(self.cfg)
 

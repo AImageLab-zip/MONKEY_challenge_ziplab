@@ -67,7 +67,12 @@ class AbstractExperiment:
             print("Training configurations not found in the configuration file.")
             return -1
 
-        self.batch_size = self.wsd_config["wholeslidedata"].get("batch_size", 32)
+        self.batch_size = self.training_config.get("batch_size", 32)
+        # inject batch size in the wsd config
+        self.wsd_config["wholeslidedata"]["default"]["batch_shape"]["batch_size"] = (
+            self.batch_size
+        )
+
         self.learning_rate = self.training_config.get("learning_rate", 0.001)
         self.epochs = self.training_config.get("epochs", 10)
         self.continue_training = getattr(self.args, "continue_training", False)
@@ -90,8 +95,6 @@ class AbstractExperiment:
         self.dataset_df = None
         self.folds_paths_dict = None
         self.fold_yaml_paths_dict = None
-        self.fold_training_yaml_paths_dict = None
-        self.fold_validation_yaml_paths_dict = None
         self.model = None  # model object to store the model instance
         self.training_batch_generator = None
 
