@@ -35,36 +35,39 @@ class BaselineDetectronExperiment(AbstractExperiment):
         self.cfg = get_cfg()
         # using faster rcnn architecture
         self.cfg.merge_from_file(model_zoo.get_config_file(self.config_url))
-        if self.model_config.get("pretrained", False):
+        if self.pretrained:
             self.cfg.MODEL.WEIGHTS = model_zoo.get_checkpoint_url(
                 self.config_url
             )  # download the model weights to fine-tune
 
         self.cfg.SEED = self.seed  # set the seed for reproducibility
 
-        # self.cfg.DATASETS.TRAIN = (self.dataset_name + "_train",)
-        # self.cfg.DATASETS.TEST = (self.dataset_name + "_val",)
-        self.cfg.DATASETS.TRAIN = ("detection_dataset2",)
-        self.cfg.DATASETS.TEST = ()
+        self.cfg.DATASETS.TRAIN = (self.dataset_name + "_train",)
+        self.cfg.DATASETS.TEST = (self.dataset_name + "_val",)
+        # self.cfg.DATASETS.TRAIN = ("detection_dataset2",)
+        # self.cfg.DATASETS.TEST = ()
         self.cfg.DATALOADER.NUM_WORKERS = self.num_workers
 
-        self.cfg.MODEL.ROI_HEADS.BATCH_SIZE_PER_IMAGE = (
-            512  # was 512 #TODO: is this correct?
-        )
+        # self.cfg.MODEL.ROI_HEADS.BATCH_SIZE_PER_IMAGE = (
+        #     512  # was 512 #TODO: is this correct?
+        # )
         self.cfg.MODEL.ROI_HEADS.NUM_CLASSES = self.num_classes  # was 1
 
-        self.cfg.SOLVER.IMS_PER_BATCH = (
-            self.batch_size
-        )  # was 10 #TODO: is this correct?
-        self.cfg.SOLVER.BASE_LR = self.learning_rate  # pick a good, was 0.001
-        self.cfg.SOLVER.MAX_ITER = self.epochs  # 2000 iterations seems good enough for this toy dataset; you may need to train longer for a practical dataset
+        # self.cfg.SOLVER.IMS_PER_BATCH = (
+        #     self.batch_size
+        # )  # was 10 #TODO: is this correct?
+        # self.cfg.SOLVER.BASE_LR = self.learning_rate  # pick a good lr, was 0.001
+        # self.cfg.SOLVER.MAX_ITER = self.epochs  # 2000 iterations seems good enough for this toy dataset; you may need to train longer for a practical dataset
 
-        self.cfg.MODEL.ANCHOR_GENERATOR.SIZES = [
-            [16, 24, 32]
-        ]  # TODO: don't hardcode this
-        self.cfg.SOLVER.STEPS = (10, 100, 250)  # TODO: don't hardcode this
-        self.cfg.SOLVER.WARMUP_ITERS = 0  # TODO: don't hardcode this
-        self.cfg.SOLVER.GAMMA = 0.5  # TODO: don't hardcode this
+        # self.cfg.MODEL.ANCHOR_GENERATOR.SIZES = [
+        #     [16, 24, 32]
+        # ]  # TODO: don't hardcode this
+        # self.cfg.SOLVER.STEPS = (10, 100, 250)  # TODO: don't hardcode this
+        # self.cfg.SOLVER.WARMUP_ITERS = 0  # TODO: don't hardcode this
+        # self.cfg.SOLVER.GAMMA = 0.5  # TODO: don't hardcode this
+
+        self.experiment_name = f"{self.model_name}_pretrained_{self.pretrained}_e{self.cfg.SOLVER.MAX_ITER}_b{self.cfg.SOLVER.IMS_PER_BATCH}_lr{self.cfg.SOLVER.BASE_LR}_t{self.timestamp}"
+        self.output_dir = os.path.join(self.output_dir, self.experiment_name)
 
         self.cfg.OUTPUT_DIR = self.output_dir
         # create the output directory

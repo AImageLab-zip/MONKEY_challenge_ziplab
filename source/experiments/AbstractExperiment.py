@@ -60,6 +60,7 @@ class AbstractExperiment:
             return -1  # TODO: implement better error handling
 
         self.model_name = self.model_config.get("name", None)
+        self.pretrained = self.model_config.get("pretrained", False)
 
         # -- TRAINING CONFIGs -- #
         self.training_config = self.config.get("training", {})
