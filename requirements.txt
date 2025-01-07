@@ -17,6 +17,8 @@ psutil
 monai
 colour
 wandb
+setuptools==59.5.0
+protobuf==4.25
 # development dependencies
 ruff
 #isort
