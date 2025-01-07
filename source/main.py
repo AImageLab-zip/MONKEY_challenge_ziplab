@@ -1,5 +1,6 @@
 import os
 
+from experiments.BaselineDetectronExperiment import BaselineDetectronExperiment
 from utils.config_parser import get_args_and_config
 from utils.data_preparation import DataPreparator
 
@@ -21,7 +22,10 @@ if __name__ == "__main__":
     print(os.getcwd())
     args, config = get_args_and_config()
     print(config)
-    data_preparator = DataPreparator(config)
-    dataset_df, folds_paths_dict = data_preparator.prepare_data()
-    print(dataset_df.head())
-    print(folds_paths_dict)
+    # data_preparator = DataPreparator(config)
+    # dataset_df, folds_paths_dict = data_preparator.prepare_data()
+    # print(dataset_df.head())
+    # print(folds_paths_dict)
+    experiment = BaselineDetectronExperiment(args, config)
+    experiment.train()
+    # experiment.test()

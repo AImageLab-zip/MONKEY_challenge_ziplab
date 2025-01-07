@@ -15,12 +15,12 @@ wholeslidedata:
   user_config: {
       "wholeslidedata": {
           "default": {
-              #"yaml_source": "", #NOTE: refer to the dataset yaml_wsi_wsa_path value!!!!
+              "yaml_source": "", #NOTE: refer to the dataset yaml_wsi_wsa_dir path!!!!
               "seed": 42,
-              "image_backend": "asap",  # was openslide
+              "image_backend": "openslide",  # was "asap"
               "labels": {"ROI": 0, "lymphocytes": 1, "monocytes": 2},
               "batch_shape": {
-                  "batch_size": 10, #also change the training batch size config with the same number
+                  "batch_size":, #also change the training batch size config with the same number
                   "spacing": 0.5,
                   "shape": [128, 128, 3],
                   "y_shape": [1000, 6],
@@ -94,7 +94,7 @@ dataset:
 model:
   name: "detectron2" #baseline model used in the example code of the challenge
   config_url: "COCO-Detection/faster_rcnn_X_101_32x8d_FPN_3x.yaml"
-  pretrained: True #no pretraining, testing what happens with non initialized weights
+  pretrained: False #no pretraining, testing what happens with non initialized weights
   #freeze_all_layers: False #no layer freezing, we need to train every layer
   #amount_frozen_layers: 0
 
@@ -103,10 +103,10 @@ optimizer:
   #weighted_loss: False #testing what happens if no wl with huge class imbalance
 
 training:
-  learning_rate: 0.0003 #standard lr for adams to start with?
-  epochs: 10 #testing only on few epochs
-  batch_size: 10 #a good batch size so we don't have an "out of memory" even with a 16 gpu
-  continue_training: False
+  learning_rate: 0.0003
+  epochs: 2000 
+  batch_size: 10
+  continue_training: True
   # weighted_classes: False #no batch balancing for now
   # label_threshold: 0.5
   # evaluate_every: 1

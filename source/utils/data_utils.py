@@ -1,4 +1,5 @@
 import os
+import pprint
 import random
 
 import cv2
@@ -10,6 +11,7 @@ import numpy as np
 # import seaborn as sns
 import torch
 import wandb
+import yaml
 
 # from torch.utils.data import DataLoader
 # from tqdm import tqdm
@@ -153,3 +155,77 @@ def show_image(image, title="Image", dpi=None, figsize=(10, 10)):
     plt.title(title)
     plt.axis("off")
     plt.show()
+
+
+## FILE I/O ##
+
+
+def load_yaml(file_path, default=None):
+    """
+    Load a YAML file and return its contents as a dictionary.
+
+    Args:
+        file_path (str): Path to the YAML file.
+        default (dict, optional): Default value to return if the file is not found. Defaults to None.
+
+    Returns:
+        dict: The contents of the YAML file as a dictionary.
+
+    Raises:
+        FileNotFoundError: If the file does not exist and no default is provided.
+        yaml.YAMLError: If there is an error parsing the YAML file.
+    """
+    try:
+        if os.path.exists(file_path):
+            with open(file_path, "r") as file:
+                yaml_file = yaml.safe_load(file)
+                print(f"Loaded YAML file from {file_path}:")
+                print(pprint.pformat(yaml_file, indent=4, compact=True))
+                return yaml_file
+        else:
+            if default is not None:
+                print(f"File {file_path} not found. Returning default value.")
+                return default
+            else:
+                raise FileNotFoundError(f"File {file_path} not found.")
+    except yaml.YAMLError as e:
+        print(f"Error parsing YAML file: {e}")
+        raise
+    except Exception as e:
+        print(f"Unexpected error while loading YAML file: {e}")
+        raise
+
+
+def save_yaml(yaml_dict, save_dir, file_name, default_flow_style=False, indent=2):
+    """
+    Save a dictionary to a YAML file with enhanced functionality.
+
+    Args:
+        yaml_dict (dict): The dictionary to save as YAML.
+        save_dir (str): The directory to save the YAML file.
+        file_name (str): The name of the YAML file.
+        default_flow_style (bool): Whether to use default flow style in YAML (default: False).
+        indent (int): Indentation level for YAML formatting (default: 2).
+
+    Returns:
+        str: Path of the saved YAML file.
+    """
+    try:
+        # Ensure the directory exists
+        os.makedirs(save_dir, exist_ok=True)
+
+        # Construct the full file path
+        file_path = os.path.join(save_dir, file_name)
+
+        # Write YAML to the file
+        with open(file_path, "w") as file:
+            yaml.dump(
+                yaml_dict, file, default_flow_style=default_flow_style, indent=indent
+            )
+
+        print(f"YAML file successfully saved to {file_path}.")
+        return file_path
+
+    except Exception as e:
+        print(f"Error saving YAML file: {e}")
+        raise
