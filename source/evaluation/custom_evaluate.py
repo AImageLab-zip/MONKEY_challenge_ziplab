@@ -19,26 +19,25 @@ Happy programming!
 """
 
 import json
-import os
 from pathlib import Path
 from pprint import pformat, pprint
-
 import monai.metrics as mm
-import numpy as np
 from scipy.spatial import distance
 from sklearn.metrics import auc
+import numpy as np
 
-from source.utils.helpers import run_prediction_processing
+from helpers import run_prediction_processing
 
 # for local debugging
-INPUT_DIRECTORY = Path(f"../data/test/input")
-OUTPUT_DIRECTORY = Path(f"../data/test/output")
-GROUND_TRUTH_DIRECTORY = Path(f"../data/test/ground_truth")
+# import os
+# INPUT_DIRECTORY = Path(f"{os.getcwd()}/test/input")
+# OUTPUT_DIRECTORY = Path(f"{os.getcwd()}/test/output")
+# GROUND_TRUTH_DIRECTORY = Path(f"{os.getcwd()}/ground_truth")
 
-# # for docker building
-# INPUT_DIRECTORY = Path("/input")
-# OUTPUT_DIRECTORY = Path("/output")
-# GROUND_TRUTH_DIRECTORY = Path("/opt/ml/input/data/ground_truth")
+# for docker building
+INPUT_DIRECTORY = Path("/input")
+OUTPUT_DIRECTORY = Path("/output")
+GROUND_TRUTH_DIRECTORY = Path("/opt/ml/input/data/ground_truth")
 
 SPACING_LEVEL0 = 0.24199951445730394
 GT_MM = True
@@ -111,7 +110,7 @@ def process(job):
     )  # margin for lymphocytes is 4um at spacing 0.25 um / pixel
     radius_mono = (
         0.005 if GT_MM else int(5 / SPACING_LEVEL0)
-    )  # margin for monocytes is 10um at spacing 0.25 um / pixel
+    )  # margin for monocytes is 5um at spacing 0.25 um / pixel
     radius_infl = (
         0.005 if GT_MM else int(5 / SPACING_LEVEL0)
     )  # margin for inflammatory cells is 7.5um at spacing 0.24 um / pixel
@@ -306,6 +305,52 @@ def get_froc_score(fp_probs, tp_probs, total_pos, area_mm2):
     return sensitivity, fp_per_mm2, froc_score
 
 
+def main():
+    print_inputs()
+    predictions = read_predictions()
+    metrics = {}
+
+    # We now process each algorithm job for this submission
+    # Note that the jobs are not in any order!
+    # We work that out from predictions.json
+
+    # Use concurrent workers to process the predictions more efficiently
+    results = run_prediction_processing(fn=process, predictions=predictions)
+    file_ids = [r[0] for r in results]
+    metrics_per_slide = [r[1] for r in results]
+    metrics["per_slide"] = {
+        file_id: metrics_per_slide[i] for i, file_id in enumerate(file_ids)
+    }
+
+    # We have the results per prediction, we can aggregate over the results and
+    # generate an overall score(s) for this submission
+    lymphocytes_metrics = format_metrics_for_aggr(metrics_per_slide, "lymphocytes")
+    monocytes_metrics = format_metrics_for_aggr(metrics_per_slide, "monocytes")
+    inflammatory_cells_metrics = format_metrics_for_aggr(
+        metrics_per_slide, "inflammatory-cells"
+    )
+    aggregated_metrics = {
+        "lymphocytes": get_aggr_froc(lymphocytes_metrics),
+        "monocytes": get_aggr_froc(monocytes_metrics),
+        "inflammatory-cells": get_aggr_froc(inflammatory_cells_metrics),
+    }
+
+    # clean up the per-file metrics
+    for file_id, file_metrics in metrics["per_slide"].items():
+        for cell_type in ["lymphocytes", "monocytes", "inflammatory-cells"]:
+            for i in ["fp_probs_slide", "tp_probs_slide", "total_pos_slide"]:
+                if i in file_metrics[cell_type]:
+                    del file_metrics[cell_type][i]
+
+    # Aggregate the metrics_per_slide
+    metrics["aggregates"] = aggregated_metrics
+
+    # Make sure to save the metrics
+    write_metrics(metrics=metrics)
+
+    return 0
+
+
 def get_aggr_froc(metrics_dict):
     if len(metrics_dict) == 0:
         return {
@@ -440,52 +485,6 @@ def write_metrics(*, metrics):
     # Write a json document used for ranking results on the leaderboard
     with open(OUTPUT_DIRECTORY / "metrics.json", "w") as f:
         f.write(json.dumps(metrics, indent=4))
-
-
-def main():
-    print_inputs()
-    predictions = read_predictions()
-    metrics = {}
-
-    # We now process each algorithm job for this submission
-    # Note that the jobs are not in any order!
-    # We work that out from predictions.json
-
-    # Use concurrent workers to process the predictions more efficiently
-    results = run_prediction_processing(fn=process, predictions=predictions)
-    file_ids = [r[0] for r in results]
-    metrics_per_slide = [r[1] for r in results]
-    metrics["per_slide"] = {
-        file_id: metrics_per_slide[i] for i, file_id in enumerate(file_ids)
-    }
-
-    # We have the results per prediction, we can aggregate over the results and
-    # generate an overall score(s) for this submission
-    lymphocytes_metrics = format_metrics_for_aggr(metrics_per_slide, "lymphocytes")
-    monocytes_metrics = format_metrics_for_aggr(metrics_per_slide, "monocytes")
-    inflammatory_cells_metrics = format_metrics_for_aggr(
-        metrics_per_slide, "inflammatory-cells"
-    )
-    aggregated_metrics = {
-        "lymphocytes": get_aggr_froc(lymphocytes_metrics),
-        "monocytes": get_aggr_froc(monocytes_metrics),
-        "inflammatory-cells": get_aggr_froc(inflammatory_cells_metrics),
-    }
-
-    # clean up the per-file metrics
-    for file_id, file_metrics in metrics["per_slide"].items():
-        for cell_type in ["lymphocytes", "monocytes", "inflammatory-cells"]:
-            for i in ["fp_probs_slide", "tp_probs_slide", "total_pos_slide"]:
-                if i in file_metrics[cell_type]:
-                    del file_metrics[cell_type][i]
-
-    # Aggregate the metrics_per_slide
-    metrics["aggregates"] = aggregated_metrics
-
-    # Make sure to save the metrics
-    write_metrics(metrics=metrics)
-
-    return 0
 
 
 if __name__ == "__main__":

@@ -41,24 +41,20 @@ class BaselineDetectronExperiment(AbstractExperiment):
             )  # download the model weights to fine-tune
 
         self.cfg.SEED = self.seed  # set the seed for reproducibility
-
         self.cfg.DATASETS.TRAIN = (self.dataset_name + "_train",)
         self.cfg.DATASETS.TEST = (self.dataset_name + "_val",)
-        # self.cfg.DATASETS.TRAIN = ("detection_dataset2",)
-        # self.cfg.DATASETS.TEST = ()
         self.cfg.DATALOADER.NUM_WORKERS = self.num_workers
 
-        # self.cfg.MODEL.ROI_HEADS.BATCH_SIZE_PER_IMAGE = (
-        #     512  # was 512 #TODO: is this correct?
-        # )
         self.cfg.MODEL.ROI_HEADS.NUM_CLASSES = self.num_classes  # was 1
 
         # self.cfg.SOLVER.IMS_PER_BATCH = (
         #     self.batch_size
         # )  # was 10 #TODO: is this correct?
         # self.cfg.SOLVER.BASE_LR = self.learning_rate  # pick a good lr, was 0.001
-        # self.cfg.SOLVER.MAX_ITER = self.epochs  # 2000 iterations seems good enough for this toy dataset; you may need to train longer for a practical dataset
-
+        # self.cfg.SOLVER.MAX_ITER = self.epochs
+        # self.cfg.MODEL.ROI_HEADS.BATCH_SIZE_PER_IMAGE = (
+        #     512  # was 512 #TODO: is this correct? don't hardcode this
+        # )
         # self.cfg.MODEL.ANCHOR_GENERATOR.SIZES = [
         #     [16, 24, 32]
         # ]  # TODO: don't hardcode this
@@ -76,7 +72,7 @@ class BaselineDetectronExperiment(AbstractExperiment):
         # save the config file
         save_yaml(self.cfg, save_dir=self.output_dir, file_name="config.yaml")
 
-    def train_fold(self, fold, fold_path_dict):
+    def train_eval_fold(self, fold, fold_path_dict):
         # check if model directory is provided else use the output directory
         if self.model_dir is not None:
             self.output_dir = self.model_dir
@@ -121,12 +117,6 @@ class BaselineDetectronExperiment(AbstractExperiment):
             file_name=f"wsd_config_fold_{fold}.yaml",
         )
 
-        # self.wsd_config["wholeslidedata"]["default"]["yaml_source"] = (
-        #     self.fold_training_yaml_paths_dict
-        # )
-
-        # self.logger.debug(self.wsd_config["wholeslidedata"]["train"])
-
         self.model = build_model(self.cfg)
 
         pytorch_total_params = sum(
@@ -139,6 +129,9 @@ class BaselineDetectronExperiment(AbstractExperiment):
         )
         self.trainer.resume_or_load(resume=self.continue_training)
         self.trainer.train()
+        
+        # evaluate the model on the evaluation set
+        self.eval_fold(fold=fold, fold_path_dict=fold_path_dict)
 
     def _predict(self):
         pass
