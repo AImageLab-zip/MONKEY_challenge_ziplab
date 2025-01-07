@@ -4,6 +4,7 @@ import pprint
 import yaml
 from detectron2 import model_zoo
 from detectron2.config import get_cfg
+from detectron2.engine import DefaultTrainer
 from detectron2.modeling import build_model
 from wholeslidedata.interoperability.detectron2.iterator import (
     WholeSlideDetectron2Iterator,
@@ -11,13 +12,33 @@ from wholeslidedata.interoperability.detectron2.iterator import (
 from wholeslidedata.interoperability.detectron2.predictor import (
     Detectron2DetectionPredictor,
 )
-from wholeslidedata.interoperability.detectron2.trainer import (
-    WholeSlideDectectron2Trainer,
-)
+
+# from wholeslidedata.interoperability.detectron2.trainer import (
+#     WholeSlideDectectron2Trainer,
+# )
 from wholeslidedata.iterators import create_batch_iterator
 
 # from wholeslidedata.visualization.plotting import plot_boxes
 from .AbstractExperiment import AbstractExperiment
+
+
+class WholeSlideDectectron2Trainer(DefaultTrainer):
+    def __init__(self, cfg, user_config, cpus):
+        self._user_config = user_config
+        self._cpus = cpus
+
+        super().__init__(cfg)
+
+    def build_train_loader(self, cfg):
+        mode = "training"
+
+        training_batch_generator = create_batch_iterator(
+            user_config=self._user_config,
+            mode=mode,
+            cpus=self._cpus,
+            iterator_class=WholeSlideDetectron2Iterator,
+        )
+        return training_batch_generator
 
 
 class BaselineDetectronExperiment(AbstractExperiment):
@@ -37,6 +58,8 @@ class BaselineDetectronExperiment(AbstractExperiment):
             self.cfg.MODEL.WEIGHTS = model_zoo.get_checkpoint_url(
                 self.config_url
             )  # download the model weights to fine-tune
+
+        self.cfg.SEED = self.seed  # set the seed for reproducibility
 
         self.cfg.DATASETS.TRAIN = (self.dataset_name + "_train",)
         self.cfg.DATASETS.TEST = (self.dataset_name + "_val",)
@@ -78,10 +101,11 @@ class BaselineDetectronExperiment(AbstractExperiment):
         # make the directory for the fold
         os.makedirs(self.model_path, exist_ok=True)
 
+        # TODO: bug here? if we use a pretrained model, we should not overwrite the weights?
         # set the model weights path
-        self.cfg.MODEL.WEIGHTS = os.path.join(
-            self.model_path, f"model_final_{fold}.pth"
-        )
+        # self.cfg.MODEL.WEIGHTS = os.path.join(
+        #     self.model_path, f"model_final_{fold}.pth"
+        # )
 
         # check if model already exists
         if os.path.exists(self.cfg.MODEL.WEIGHTS):
@@ -105,18 +129,18 @@ class BaselineDetectronExperiment(AbstractExperiment):
         self.fold_training_yaml_paths_dict = self.fold_yaml_paths_dict["training"]
         self.fold_validation_yaml_paths_dict = self.fold_yaml_paths_dict["validation"]
 
-        self.wsd_settings = self.wsd_config.get("wholeslidedata", {})
-
         # inject fold splits to the config dict
-        self.wsd_settings["train"] = {"yaml_source": self.fold_training_yaml_paths_dict}
-        self.wsd_settings["validation"] = {
-            "yaml_source": self.fold_validation_yaml_paths_dict
-        }
-        self.wsd_settings["default"] = {
+        self.wsd_config["wholeslidedata"]["train"] = {
             "yaml_source": self.fold_training_yaml_paths_dict
         }
+        self.wsd_config["wholeslidedata"]["validation"] = {
+            "yaml_source": self.fold_validation_yaml_paths_dict
+        }
+        # self.wsd_config["wholeslidedata"]["default"]["yaml_source"] = (
+        #     self.fold_training_yaml_paths_dict
+        # )
 
-        self.logger.debug(self.wsd_settings["train"])
+        self.logger.debug(self.wsd_config["wholeslidedata"]["train"])
 
         self.model = build_model(self.cfg)
 
@@ -126,7 +150,7 @@ class BaselineDetectronExperiment(AbstractExperiment):
         self.logger.info("Parameter Count:\n" + str(pytorch_total_params))
 
         self.trainer = WholeSlideDectectron2Trainer(
-            self.cfg, user_config=self.wsd_config, cpus=self.num_workers
+            cfg=self.cfg, user_config=self.wsd_config, cpus=self.num_workers
         )
         self.trainer.resume_or_load(resume=self.continue_training)
         self.trainer.train()
