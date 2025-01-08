@@ -95,6 +95,9 @@ model:
   name: "detectron2" #baseline model used in the example code of the challenge
   config_url: "COCO-Detection/faster_rcnn_X_101_32x8d_FPN_3x.yaml"
   pretrained: True #no pretraining, testing what happens with non initialized weights
+  conf_threshold: 0.1 #detection confidence level required to have a bbox detection
+  nms_threshold: 0.3 #non-maxima suppression threshold
+
   #freeze_all_layers: False #no layer freezing, we need to train every layer
   #amount_frozen_layers: 0
 

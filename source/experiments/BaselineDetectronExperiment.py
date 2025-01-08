@@ -20,6 +20,7 @@ from wholeslidedata.iterators import create_batch_iterator
 
 # from wholeslidedata.visualization.plotting import plot_boxes
 from .AbstractExperiment import AbstractExperiment
+from models import ModelFactory
 
 
 class BaselineDetectronExperiment(AbstractExperiment):
@@ -47,6 +48,10 @@ class BaselineDetectronExperiment(AbstractExperiment):
 
         self.cfg.MODEL.ROI_HEADS.NUM_CLASSES = self.num_classes  # was 1
 
+        self.cfg.MODEL.ROI_HEADS.SCORE_THRESH_TEST = self.conf_threshold
+        self.cfg.MODEL.ROI_HEADS.NMS_THRESH_TEST = self.nms_threshold
+        self.cfg.MODEL.RPN.NMS_THRESH = self.nms_threshold
+
         # self.cfg.SOLVER.IMS_PER_BATCH = (
         #     self.batch_size
         # )  # was 10 #TODO: is this correct?
@@ -70,7 +75,7 @@ class BaselineDetectronExperiment(AbstractExperiment):
         os.makedirs(self.output_dir, exist_ok=True)
 
         # save the config file
-        save_yaml(self.cfg, save_dir=self.output_dir, file_name="config.yaml")
+        save_yaml(self.cfg, save_dir=self.output_dir, file_name="model_config.yaml")
 
     def train_eval_fold(self, fold, fold_path_dict):
         # check if model directory is provided else use the output directory
@@ -117,19 +122,15 @@ class BaselineDetectronExperiment(AbstractExperiment):
             file_name=f"wsd_config_fold_{fold}.yaml",
         )
 
-        self.model = build_model(self.cfg)
+        self.model = ModelFactory().get_model(self.model_name, self.cfg, self.wsd_config)
 
-        pytorch_total_params = sum(
-            p.numel() for p in self.model.parameters() if p.requires_grad
-        )
+        # pytorch_total_params = sum(
+        #     p.numel() for p in self.model.parameters() if p.requires_grad
+        # )
         self.logger.info("Parameter Count:\n" + str(pytorch_total_params))
 
-        self.trainer = WholeSlideDectectron2Trainer(
-            cfg=self.cfg, user_config=self.wsd_config, cpus=self.num_workers
-        )
-        self.trainer.resume_or_load(resume=self.continue_training)
-        self.trainer.train()
-        
+        self.model.train(resume=self.continue_training)
+
         # evaluate the model on the evaluation set
         self.eval_fold(fold=fold, fold_path_dict=fold_path_dict)
 

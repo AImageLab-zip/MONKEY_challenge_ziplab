@@ -65,6 +65,9 @@ class AbstractExperiment:
         self.model_name = self.model_config.get("name", None)
         self.pretrained = self.model_config.get("pretrained", False)
 
+        self.conf_threshold = self.model_config.get("conf_threshold", 0.1)
+        self.nms_threshold = self.model_config.get("nms_threshold", 0.3)
+
         # -- TRAINING CONFIGs -- #
         self.training_config = self.config.get("training", {})
         if self.training_config is None:
@@ -88,11 +91,11 @@ class AbstractExperiment:
                 raise ValueError(
                     "Model directory path must be provided if continue_training is True."
                 )
-        ### OUTPUT DIRECTORY ###
+        # -- OUTPUT CONFIGs -- #
         # set up unique output directory for the experiment
         self.output_dir = self.project_config.get("output_dir", "../outputs")
-        self.experiment_name = f"{self.model_name}_e{self.epochs}_b{self.batch_size}_lr{self.learning_rate}_t{self.timestamp}"
-        self.output_dir = os.path.join(self.output_dir, self.experiment_name)
+        # self.experiment_name = f"{self.model_name}_e{self.epochs}_b{self.batch_size}_lr{self.learning_rate}_t{self.timestamp}"
+        # self.output_dir = os.path.join(self.output_dir, self.experiment_name)
 
         # -- CLASS STATE VARIABLES -- #
         self.data_prepator = None
@@ -133,22 +136,43 @@ class AbstractExperiment:
 
     def train_eval_fold(self, fold, fold_path_dict):
         pass
-            
+
     def eval_fold(self, fold, fold_path_dict):
-        
         self.logger.info(f"Evaluating the model on fold {fold}...")
-        
+
         self.validation_fold_dict = fold_path_dict["validation"]
 
         progress_bar = tqdm(self.validation_fold_dict)
 
-        for wsi_path in progress_bar:
+        for wsi_path, wsa_path in progress_bar:
             wsi_id = os.path.basename(wsi_path).split(".")[0]
             progress_bar.set_description(f"Validating {wsi_id} ...")
-            immune_cells_dict, monocytes_dict, lymphocytes_dict = self.eval_wsi()
 
-    def eval_wsi(self, iterator, predictor, spacing, image_path, output_path): 
+            # TODO: don't hardcode those values
+            patch_shape = (128, 128, 3)
+            spacings = (0.5,)
+            overlap = (0, 0)
+            offset = (0, 0)
+            center = False
 
+            self.patch_configuration = PatchConfiguration(
+                patch_shape=patch_shape,
+                spacings=spacings,
+                overlap=overlap,
+                offset=offset,
+                center=center,
+            )
+
+            iterator = create_patch_iterator(
+                image_path=wsi_path,
+                mask_path=wsa_path,
+                patch_configuration=self.patch_configuration,
+                cpus=self.num_workers,
+                backend="openslide",
+            )  # was backend='asap'
+            immune_cells_dict, monocytes_dict, lymphocytes_dict = self.eval_wsi(iterator=iterator,)
+
+    def eval_wsi(self, iterator, predictor, spacing, image_path, output_path):
         SPACING_CONST = 0.24199951445730394
 
         json_filename_immune_cells = "detected-inflammatory-cells.json"
@@ -190,7 +214,7 @@ class AbstractExperiment:
             x_batch = x_batch.squeeze(0)
             y_batch = y_batch.squeeze(0)
 
-            predictions = predictor.predict_on_batch(x_batch)
+            predictions = self.model.predict_on_batch(x_batch)
             for idx, prediction in enumerate(predictions):
                 c = info["x"]
                 r = info["y"]
