@@ -67,6 +67,15 @@ def get_args_and_config():
         dest="use_wandb",
         help="Disables wandb logging",
     )
+    
+    parser.add_argument(
+        "--fold",
+        type=int,
+        default=None,
+        help="Fold number to train on",
+        required=False,
+    )
+    
     parser.add_argument(
         "--test",
         action="store_false",

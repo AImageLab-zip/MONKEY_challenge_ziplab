@@ -6,6 +6,7 @@ from detectron2 import model_zoo
 from detectron2.config import get_cfg
 from detectron2.engine import DefaultTrainer
 from detectron2.modeling import build_model
+from models import ModelFactory
 from utils.data_utils import load_yaml, save_yaml
 from wholeslidedata.interoperability.detectron2.iterator import (
     WholeSlideDetectron2Iterator,
@@ -20,7 +21,6 @@ from wholeslidedata.iterators import create_batch_iterator
 
 # from wholeslidedata.visualization.plotting import plot_boxes
 from .AbstractExperiment import AbstractExperiment
-from models import ModelFactory
 
 
 class BaselineDetectronExperiment(AbstractExperiment):
@@ -45,42 +45,27 @@ class BaselineDetectronExperiment(AbstractExperiment):
         self.cfg.DATASETS.TRAIN = (self.dataset_name + "_train",)
         self.cfg.DATASETS.TEST = (self.dataset_name + "_val",)
         self.cfg.DATALOADER.NUM_WORKERS = self.num_workers
-
-        self.cfg.MODEL.ROI_HEADS.NUM_CLASSES = self.num_classes  # was 1
-
+        self.cfg.MODEL.ROI_HEADS.NUM_CLASSES = self.num_classes
         self.cfg.MODEL.ROI_HEADS.SCORE_THRESH_TEST = self.conf_threshold
         self.cfg.MODEL.ROI_HEADS.NMS_THRESH_TEST = self.nms_threshold
         self.cfg.MODEL.RPN.NMS_THRESH = self.nms_threshold
 
-        # self.cfg.SOLVER.IMS_PER_BATCH = (
-        #     self.batch_size
-        # )  # was 10 #TODO: is this correct?
-        # self.cfg.SOLVER.BASE_LR = self.learning_rate  # pick a good lr, was 0.001
-        # self.cfg.SOLVER.MAX_ITER = self.epochs
-        # self.cfg.MODEL.ROI_HEADS.BATCH_SIZE_PER_IMAGE = (
-        #     512  # was 512 #TODO: is this correct? don't hardcode this
-        # )
-        # self.cfg.MODEL.ANCHOR_GENERATOR.SIZES = [
-        #     [16, 24, 32]
-        # ]  # TODO: don't hardcode this
-        # self.cfg.SOLVER.STEPS = (10, 100, 250)  # TODO: don't hardcode this
-        # self.cfg.SOLVER.WARMUP_ITERS = 0  # TODO: don't hardcode this
-        # self.cfg.SOLVER.GAMMA = 0.5  # TODO: don't hardcode this
-
-        self.experiment_name = f"{self.model_name}_pretrained_{self.pretrained}_e{self.cfg.SOLVER.MAX_ITER}_b{self.cfg.SOLVER.IMS_PER_BATCH}_lr{self.cfg.SOLVER.BASE_LR}_t{self.timestamp}"
-        self.output_dir = os.path.join(self.output_dir, self.experiment_name)
+        # - OUTPUTs CONFIGs -#
+        if self.model_dir is not None:
+            self.output_dir = self.model_dir
+        else:
+            self.experiment_name = f"{self.model_name}_pretrained_{self.pretrained}_e{self.cfg.SOLVER.MAX_ITER}_b{self.cfg.SOLVER.IMS_PER_BATCH}_lr{self.cfg.SOLVER.BASE_LR}"
+            self.output_dir = os.path.join(self.output_base_dir, self.experiment_name)
 
         self.cfg.OUTPUT_DIR = self.output_dir
+
         # create the output directory
         os.makedirs(self.output_dir, exist_ok=True)
-
         # save the config file
         save_yaml(self.cfg, save_dir=self.output_dir, file_name="model_config.yaml")
 
     def train_eval_fold(self, fold, fold_path_dict):
         # check if model directory is provided else use the output directory
-        if self.model_dir is not None:
-            self.output_dir = self.model_dir
 
         self.model_path = os.path.join(self.output_dir, f"fold_{fold}")
         # make the directory for the fold
@@ -106,10 +91,6 @@ class BaselineDetectronExperiment(AbstractExperiment):
         if self.fold_yaml_paths_dict is None:
             self.logger.error("Error loading fold yaml file.")
             return -1
-
-        # self.fold_training_yaml_paths_dict = self.fold_yaml_paths_dict["training"]
-        # self.fold_validation_yaml_paths_dict = self.fold_yaml_paths_dict["validation"]
-
         # inject fold splits to the config dict
         self.wsd_config["wholeslidedata"]["default"]["yaml_source"] = (
             self.fold_yaml_paths_dict
@@ -122,17 +103,19 @@ class BaselineDetectronExperiment(AbstractExperiment):
             file_name=f"wsd_config_fold_{fold}.yaml",
         )
 
-        self.model = ModelFactory().get_model(self.model_name, self.cfg, self.wsd_config)
+        self.model = ModelFactory().get_model(
+            self.model_name, cfg=self.cfg, wsd_config=self.wsd_config
+        )
 
         # pytorch_total_params = sum(
         #     p.numel() for p in self.model.parameters() if p.requires_grad
         # )
-        self.logger.info("Parameter Count:\n" + str(pytorch_total_params))
+        # self.logger.info("Parameter Count:\n" + str(pytorch_total_params))
 
         self.model.train(resume=self.continue_training)
 
         # evaluate the model on the evaluation set
-        self.eval_fold(fold=fold, fold_path_dict=fold_path_dict)
+        self.eval_fold(fold=fold, fold_path_dict=self.fold_yaml_paths_dict)
 
     def _predict(self):
         pass

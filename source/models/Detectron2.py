@@ -21,11 +21,13 @@ from wholeslidedata.iterators import create_batch_iterator
 #     WholeSlideDectectron2Trainer,
 # ) #NOTE: added the import code of this object down here to make it customizable!
 
+
 def transform(image):
     SIZE = 128
     AUG = T.FixedSizeCrop((SIZE, SIZE), pad_value=0)
     image = AUG.get_transform(image).apply_image(image)
     return image
+
 
 class WholeSlideDectectron2Trainer(DefaultTrainer):
     def __init__(self, cfg, user_config, cpus):
@@ -68,10 +70,14 @@ class BatchPredictor(DefaultPredictor):
 
 
 class Detectron2:
-    def __init__(self, cfg, wsd_config=None):
+    def __init__(self, cfg, wsd_config, **kwargs):
         # super(Detectron2, self).__init__()
+
         self.cfg = cfg
+        assert self.cfg, "Model configuration not found!"
+        # extract the wsd_config from the kwargs
         self.wsd_config = wsd_config
+        assert self.wsd_config, "WholeSlideData configuration not found!"
 
         self.INV_LABEL_MAP = {
             0: "lymphocyte",
@@ -81,8 +87,6 @@ class Detectron2:
         self.num_workers = self.cfg.DATALOADER.get("NUM_WORKERS", 1)
 
         self.logger = get_logger(name="Detectron2")
-        assert self.cfg, "Model configuration not found!"
-        assert wsd_config, "WholeSlideData configuration not found!"
 
         # initialize the model with the configuration
         self.model = build_model(self.cfg)

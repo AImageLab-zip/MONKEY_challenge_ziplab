@@ -5,11 +5,8 @@ import models
 
 class ModelFactory:
     @staticmethod
-    def get_model(config, **kwargs):
-        fallback_model = ""  # fallback model name if not specified in config
-        name = (
-            config["model"].get("name", fallback_model).lower()
-        )  # get model name from config, if not found use fallback_model, convert to lowercase
+    def get_model(model_name, **kwargs):
+        name = model_name.lower()  # get model name from config, if not found use fallback_model, convert to lowercase
         model_class = None
 
         # List of custom model names excluding internal attributes
@@ -38,10 +35,10 @@ class ModelFactory:
         if model_class:
             try:
                 # Pass **kwargs along with args and config to the model constructor
-                model_instance = model_class(config, **kwargs)
+                model_instance = model_class(**kwargs)
             except TypeError as e:
                 raise TypeError(
-                    f"Could not instantiate {model_class} with {config} and {kwargs}: {e}"
+                    f"Could not instantiate {model_class} with {kwargs}: {e}"
                 )
         else:
             raise Exception(f"Model {name} not implemented")

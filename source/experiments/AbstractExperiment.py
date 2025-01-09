@@ -7,6 +7,7 @@ from utils.data_preparation import DataPreparator
 from utils.data_utils import get_device, px_to_mm, write_json_file
 from utils.logger import get_logger
 from wholeslidedata.image.wholeslideimage import WholeSlideImage
+from wholeslidedata.iterators import PatchConfiguration, create_patch_iterator
 
 
 class AbstractExperiment:
@@ -27,7 +28,7 @@ class AbstractExperiment:
         if self.project_config is None:
             print("Project configurations not found in the configuration file.")
             return -1  # TODO: implement better error handling
-        # seed
+
         self.seed = self.project_config.get("seed", 42)
 
         self.timestamp = getattr(
@@ -40,12 +41,17 @@ class AbstractExperiment:
 
         # -- DATA CONFIGs -- #
         self.wsd_config = self.config.get("wholeslidedata", {})["user_config"]
-        self.logger.debug(f"wsd_config: {self.wsd_config}")
+
         if self.wsd_config is None:
             print(
                 "Whole Slide Data configurations not found in the configuration file."
             )
             return -1  # TODO: implement better error handling
+
+        # inject configs seed in the wsd_config
+        self.wsd_config["seed"] = self.seed
+
+        self.img_backend = self.wsd_config.get("image_backend", "openslide")
 
         self.dataset_configs = self.config.get("dataset", {})
         if self.dataset_configs is None:
@@ -55,6 +61,17 @@ class AbstractExperiment:
         self.num_classes = self.dataset_configs.get("num_classes", 1)
 
         self.dataset_name = self.dataset_configs.get("name", "default_dataset")
+
+        self.n_folds = self.dataset_configs.get("n_folds", 5)
+
+        # patches and shape configs
+        self.batch_shape = self.wsd_config["wholeslidedata"]["default"]["batch_shape"]
+        self.patch_shape = self.batch_shape.get("shape", (128, 128, 3))
+        self.spacings = (self.batch_shape.get("spacing", 0.5),)
+        self.y_shape = self.batch_shape.get("y_shape", (1000, 6))
+        self.overlap = (0, 0)
+        self.offset = (0, 0)
+        self.center = False
 
         # -- MODEL CONFIGs -- #
         self.model_config = self.config.get("model", {})
@@ -76,9 +93,7 @@ class AbstractExperiment:
 
         self.batch_size = self.training_config.get("batch_size", 32)
         # inject batch size in the wsd config
-        self.wsd_config["wholeslidedata"]["default"]["batch_shape"]["batch_size"] = (
-            self.batch_size
-        )
+        self.batch_shape["batch_size"] = self.batch_size
 
         self.learning_rate = self.training_config.get("learning_rate", 0.001)
         self.epochs = self.training_config.get("epochs", 10)
@@ -86,16 +101,22 @@ class AbstractExperiment:
 
         self.model_dir = getattr(self.args, "model_dir", None)
 
+        self.fold = getattr(self.args, "fold", None)
+        if self.fold is not None:
+            assert self.fold < self.n_folds, "Fold number should be less than n_folds."
+
         if self.continue_training and self.model_dir is None:
             if self.model_dir is None:
                 raise ValueError(
                     "Model directory path must be provided if continue_training is True."
                 )
         # -- OUTPUT CONFIGs -- #
-        # set up unique output directory for the experiment
-        self.output_dir = self.project_config.get("output_dir", "../outputs")
+        # pre-set up output directory for the experiment
+        self.output_base_dir = self.project_config.get("output_dir", "../outputs")
         # self.experiment_name = f"{self.model_name}_e{self.epochs}_b{self.batch_size}_lr{self.learning_rate}_t{self.timestamp}"
         # self.output_dir = os.path.join(self.output_dir, self.experiment_name)
+        self.experiment_name = None
+        self.output_dir = None
 
         # -- CLASS STATE VARIABLES -- #
         self.data_prepator = None
@@ -107,6 +128,9 @@ class AbstractExperiment:
 
         # set-up the optional model params and gradient watch by wand-db (if enabled)
         # self.model_watch = getattr(self.args, "wandb_model_watch", False)
+
+        # debug print for wsd config dict
+        self.logger.debug(f"wsd_config: {self.wsd_config}")
 
     def load_data(self):
         self.data_prepator = DataPreparator(config=self.config)
@@ -122,7 +146,17 @@ class AbstractExperiment:
     def train(self):
         self.dataset_df, self.folds_paths_dict = self.load_data()
 
-        self.logger.info("Training the model...")
+        # if fold is specified, train on that fold only
+        if self.fold is not None:
+            self.logger.info(
+                "Training the model on single fold: {}...".format(self.fold)
+            )
+            self.train_eval_fold(
+                fold=self.fold, fold_path_dict=self.folds_paths_dict[self.fold]
+            )
+            return
+        # if no fold is specified, train on all folds
+        self.logger.info("Training the model on all folds...")
         for fold, fold_path_dict in self.folds_paths_dict.items():
             self.logger.info(
                 "Training fold {}/{}".format(fold + 1, len(self.folds_paths_dict))
@@ -148,19 +182,12 @@ class AbstractExperiment:
             wsi_id = os.path.basename(wsi_path).split(".")[0]
             progress_bar.set_description(f"Validating {wsi_id} ...")
 
-            # TODO: don't hardcode those values
-            patch_shape = (128, 128, 3)
-            spacings = (0.5,)
-            overlap = (0, 0)
-            offset = (0, 0)
-            center = False
-
             self.patch_configuration = PatchConfiguration(
-                patch_shape=patch_shape,
-                spacings=spacings,
-                overlap=overlap,
-                offset=offset,
-                center=center,
+                patch_shape=self.patch_shape,
+                spacings=self.spacings,
+                overlap=self.overlap,
+                offset=self.offset,
+                center=self.center,
             )
 
             iterator = create_patch_iterator(
@@ -168,9 +195,11 @@ class AbstractExperiment:
                 mask_path=wsa_path,
                 patch_configuration=self.patch_configuration,
                 cpus=self.num_workers,
-                backend="openslide",
+                backend=self.img_backend,
             )  # was backend='asap'
-            immune_cells_dict, monocytes_dict, lymphocytes_dict = self.eval_wsi(iterator=iterator,)
+            immune_cells_dict, monocytes_dict, lymphocytes_dict = self.eval_wsi(
+                iterator=iterator,
+            )
 
     def eval_wsi(self, iterator, predictor, spacing, image_path, output_path):
         SPACING_CONST = 0.24199951445730394
