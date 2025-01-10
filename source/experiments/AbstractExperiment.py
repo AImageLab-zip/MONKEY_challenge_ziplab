@@ -151,7 +151,7 @@ class AbstractExperiment:
             self.logger.error("Error loading fold yaml file.")
             return -1
         # inject fold splits to the config dict
-        self.wsd_config["wholeslidedata"]["default"]["yaml_source"] = (
+        self.wsd_config["wholeslidedata"]["default"]["yaml_source"] = deepcopy(
             self.fold_yaml_paths_dict
         )
 
@@ -203,7 +203,6 @@ class AbstractExperiment:
         assert self.model is not None, "Model is not loaded."
         assert self.dataset_df is not None, "Dataset is not loaded."
         assert self.fold_yaml_paths_dict is not None, "Folds paths are not loaded."
-
         self.validation_fold_dict = self.fold_yaml_paths_dict["validation"]
 
         self.patch_configuration = PatchConfiguration(
@@ -217,9 +216,11 @@ class AbstractExperiment:
         progress_bar = tqdm(self.validation_fold_dict)
 
         for entry in progress_bar:
-            wsi_path = entry["wsi"]
+            wsi_path = entry["wsi"]["path"]
             # wsa_path = entry["wsa"]
             wsi_id = os.path.basename(wsi_path).split(".")[0]
+            #remove the _PAS_CPG from the wsi_id
+            wsi_id = wsi_id.split("_PAS_CPG")[0]
             mask_path = self.dataset_df.loc[
                 self.dataset_df["Slide ID"] == wsi_id, "WSI Mask Path"
             ]

@@ -227,8 +227,8 @@ def load_yaml(file_path, default=None):
         if os.path.exists(file_path):
             with open(file_path, "r") as file:
                 yaml_file = yaml.safe_load(file)
-                print(f"Loaded YAML file from {file_path}:")
-                print(pprint.pformat(yaml_file, indent=4, compact=True))
+                print(f"Successfullt loaded YAML file from {file_path}")
+                # print(pprint.pformat(yaml_file, indent=4, compact=True))
                 return yaml_file
         else:
             if default is not None:

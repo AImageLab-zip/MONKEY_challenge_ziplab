@@ -4,22 +4,9 @@ import pprint
 import yaml
 from detectron2 import model_zoo
 from detectron2.config import get_cfg
-from detectron2.engine import DefaultTrainer
-from detectron2.modeling import build_model
 from models import ModelFactory
 from utils.data_utils import load_yaml, save_yaml
-from wholeslidedata.interoperability.detectron2.iterator import (
-    WholeSlideDetectron2Iterator,
-)
-from wholeslidedata.interoperability.detectron2.predictor import (
-    Detectron2DetectionPredictor,
-)
-from wholeslidedata.interoperability.detectron2.trainer import (
-    WholeSlideDectectron2Trainer,
-)
-from wholeslidedata.iterators import create_batch_iterator
 
-# from wholeslidedata.visualization.plotting import plot_boxes
 from .AbstractExperiment import AbstractExperiment
 
 
@@ -44,6 +31,7 @@ class BaselineDetectronExperiment(AbstractExperiment):
         self.cfg.SEED = self.seed  # set the seed for reproducibility
         self.cfg.DATASETS.TRAIN = (self.dataset_name + "_train",)
         # self.cfg.DATASETS.TEST = (self.dataset_name + "_val",)
+        self.cfg.DATASETS.TEST = ()
         self.cfg.DATALOADER.NUM_WORKERS = self.num_workers
         self.cfg.MODEL.ROI_HEADS.NUM_CLASSES = self.num_classes
         self.cfg.MODEL.ROI_HEADS.SCORE_THRESH_TEST = self.conf_threshold
@@ -57,7 +45,7 @@ class BaselineDetectronExperiment(AbstractExperiment):
         # NOTE: hardcoding the values for now!
         self.cfg.MODEL.ROI_HEADS.BATCH_SIZE_PER_IMAGE = 512  # was 512
         self.cfg.MODEL.ANCHOR_GENERATOR.SIZES = [[16, 24, 32]]
-        #self.cfg.SOLVER.STEPS = (10, 100, 250)
+        # self.cfg.SOLVER.STEPS = (10, 100, 250)
         self.cfg.SOLVER.WARMUP_ITERS = 0
         self.cfg.SOLVER.GAMMA = 0.5
 
