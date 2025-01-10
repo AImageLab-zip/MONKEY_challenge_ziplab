@@ -117,6 +117,14 @@ class AbstractExperiment:
         # self.output_dir = os.path.join(self.output_dir, self.experiment_name)
         self.experiment_name = None
         self.output_dir = None
+        self.preds_dir = None
+        self.patient_pred_dir = None
+
+        # -- CLASS STATE CONSTANTS -- #
+        self.SPACING_CONST = 0.24199951445730394  # maximum micro-meter per pixel spacing (resolution) of the whole slide images
+        self.JSON_FILENAME_INFLAMMATORY_CELLS = "detected-inflammatory-cells.json"
+        self.JSON_FILENAME_LYMPHOCYTES = "detected-lymphocytes.json"
+        self.JSON_FILENAME_MONOCYTES = "detected-monocytes.json"
 
         # -- CLASS STATE VARIABLES -- #
         self.data_prepator = None
@@ -154,7 +162,7 @@ class AbstractExperiment:
             self.train_eval_fold(
                 fold=self.fold, fold_path_dict=self.folds_paths_dict[self.fold]
             )
-            return
+            return 0
         # if no fold is specified, train on all folds
         self.logger.info("Training the model on all folds...")
         for fold, fold_path_dict in self.folds_paths_dict.items():
@@ -168,6 +176,9 @@ class AbstractExperiment:
                 )
             )
 
+        self.logger.info("Training of all folds completed")
+        return 0
+
     def train_eval_fold(self, fold, fold_path_dict):
         pass
 
@@ -176,38 +187,37 @@ class AbstractExperiment:
 
         self.validation_fold_dict = fold_path_dict["validation"]
 
+        self.patch_configuration = PatchConfiguration(
+            patch_shape=self.patch_shape,
+            spacings=self.spacings,
+            overlap=self.overlap,
+            offset=self.offset,
+            center=self.center,
+        )
+
         progress_bar = tqdm(self.validation_fold_dict)
 
-        for wsi_path, wsa_path in progress_bar:
+        for entry in progress_bar:
+            wsi_path = entry["wsi"]
+            # wsa_path = entry["wsa"]
             wsi_id = os.path.basename(wsi_path).split(".")[0]
+            mask_path = self.dataset_df.loc[
+                self.dataset_df["Slide ID"] == wsi_id, "WSI Mask Path"
+            ]
             progress_bar.set_description(f"Validating {wsi_id} ...")
 
-            self.patch_configuration = PatchConfiguration(
-                patch_shape=self.patch_shape,
-                spacings=self.spacings,
-                overlap=self.overlap,
-                offset=self.offset,
-                center=self.center,
-            )
-
-            iterator = create_patch_iterator(
-                image_path=wsi_path,
-                mask_path=wsa_path,
-                patch_configuration=self.patch_configuration,
-                cpus=self.num_workers,
-                backend=self.img_backend,
-            )  # was backend='asap'
             immune_cells_dict, monocytes_dict, lymphocytes_dict = self.eval_wsi(
-                iterator=iterator,
+                wsi_path=wsi_path, mask_path=mask_path
             )
 
-    def eval_wsi(self, iterator, predictor, spacing, image_path, output_path):
-        SPACING_CONST = 0.24199951445730394
+            self._save_predictions(
+                wsi_id=wsi_id,
+                immune_cells_dict=immune_cells_dict,
+                monocytes_dict=monocytes_dict,
+                lymphocytes_dict=lymphocytes_dict,
+            )
 
-        json_filename_immune_cells = "detected-inflammatory-cells.json"
-        json_filename_lymphocytes = "detected-lymphocytes.json"
-        json_filename_monocytes = "detected-monocytes.json"
-
+    def eval_wsi(self, wsi_path, mask_path):
         output_dict = {
             "name": "",
             "type": "Multiple points",
@@ -232,18 +242,28 @@ class AbstractExperiment:
         counter_monocytes = 0
         spacing_min = 0.25  # was used in the original code to edit the annotations to bounding boxes
 
-        ratio = spacing / spacing_min
-        with WholeSlideImage(image_path) as wsi:
+        iterator = create_patch_iterator(
+            image_path=wsi_path,
+            mask_path=mask_path,
+            patch_configuration=self.patch_configuration,
+            cpus=self.num_workers,
+            backend=self.img_backend,
+        )  # was backend='asap'
+
+        ratio = self.spacing / spacing_min
+        with WholeSlideImage(wsi_path) as wsi:
             spacing = wsi.get_real_spacing(spacing_min)
             print(
-                f"Spacing: {spacing} - Spacing const: {SPACING_CONST} - ratio: {ratio}"
+                f"Spacing: {spacing} - Spacing const: {self.SPACING_CONST} - ratio: {ratio}"
             )
 
         for x_batch, y_batch, info in tqdm(iterator):
             x_batch = x_batch.squeeze(0)
             y_batch = y_batch.squeeze(0)
 
+            # predict points on the given batch
             predictions = self.model.predict_on_batch(x_batch)
+
             for idx, prediction in enumerate(predictions):
                 c = info["x"]
                 r = info["y"]
@@ -268,7 +288,7 @@ class AbstractExperiment:
                         "point": [
                             px_to_mm(x, spacing),
                             px_to_mm(y, spacing),
-                            SPACING_CONST,
+                            self.SPACING_CONST,
                         ],
                         "probability": confidence,
                     }
@@ -284,7 +304,7 @@ class AbstractExperiment:
                             "point": [
                                 px_to_mm(x, spacing),
                                 px_to_mm(y, spacing),
-                                SPACING_CONST,
+                                self.SPACING_CONST,
                             ],
                             "probability": confidence,
                         }
@@ -300,7 +320,7 @@ class AbstractExperiment:
                             "point": [
                                 px_to_mm(x, spacing),
                                 px_to_mm(y, spacing),
-                                SPACING_CONST,
+                                self.SPACING_CONST,
                             ],
                             "probability": confidence,
                         }
@@ -311,36 +331,8 @@ class AbstractExperiment:
                         counter_monocytes += 1
 
                     else:
-                        print("Unknown label")
+                        self.logger.warning("Unknown label")
                         continue
-
-        print(f"Predicted {len(annotations_immune_cells)} points")
-        print("saving predictions...")
-
-        # for i, points in enumerate(annotations):
-        #     print(f"Annotation {i}: {points}")
-
-        # saving json file immune cells
-        output_path_json_immune_cells = os.path.join(
-            output_path, json_filename_immune_cells
-        )
-        write_json_file(
-            location=output_path_json_immune_cells, content=output_dict_immune_cells
-        )
-
-        # saving json file lymphocytes
-        output_path_json_lyphocytes = os.path.join(
-            output_path, json_filename_lymphocytes
-        )
-        write_json_file(
-            location=output_path_json_lyphocytes, content=output_dict_lymphocytes
-        )
-
-        # saving json file monocytes
-        output_path_json_monocytes = os.path.join(output_path, json_filename_monocytes)
-        write_json_file(
-            location=output_path_json_monocytes, content=output_dict_monocytes
-        )
 
         # #TODO: bugged code, they had the same problem and even downgrading shapely didn't work :(
         # # saving xml file
@@ -353,7 +345,40 @@ class AbstractExperiment:
         #     label_color="blue",
         # )
 
-        print("finished!")
+        return output_dict_immune_cells, output_dict_monocytes, output_dict_lymphocytes
+
+    def _save_predictions(
+        self,
+        wsi_id,
+        immune_cells_dict,
+        monocytes_dict,
+        lymphocytes_dict,
+    ):
+        # making output directories for saving the predictions
+        self.preds_dir = os.path.join(self.output_dir, "results")
+        self.patient_pred_dir = os.path.join(self.preds_dir, wsi_id)
+
+        # create the patient prediction directory if it doesn't exist
+        os.makedirs(self.patient_pred_dir, exist_ok=True)
+
+        # saving the json files for immune, monocytes and lymphocytes predictions
+        write_json_file(
+            json_dict=immune_cells_dict,
+            save_dir=self.patient_pred_dir,
+            file_name=self.JSON_FILENAME_INFLAMMATORY_CELLS,
+        )
+
+        write_json_file(
+            json_dict=monocytes_dict,
+            save_dir=self.patient_pred_dir,
+            file_name=self.JSON_FILENAME_MONOCYTES,
+        )
+
+        write_json_file(
+            json_dict=lymphocytes_dict,
+            save_dir=self.patient_pred_dir,
+            file_name=self.JSON_FILENAME_LYMPHOCYTES,
+        )
 
     def test(self):
         pass
