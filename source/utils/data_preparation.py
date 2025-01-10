@@ -220,7 +220,9 @@ class DataPreparator:
         self.logger.debug(f"Dataset firs rows:\n{self.dataset_df.head()}\n")
 
         # save the updated metadata file
-        self.dataset_df.to_csv(self.yaml_wsi_wsa_dir, index=False)
+        self.dataset_df.to_csv(
+            os.path.join(self.yaml_wsi_wsa_dir, "dataset_metadata_df.csv"), index=False
+        )
 
         return self.dataset_df
 

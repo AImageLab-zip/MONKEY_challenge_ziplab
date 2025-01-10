@@ -106,8 +106,8 @@ optimizer:
   #weighted_loss: False #testing what happens if no wl with huge class imbalance
 
 training:
-  learning_rate: 0.0003
-  epochs: 2000 
+  learning_rate: 0.001
+  epochs: 10
   batch_size: 10
   continue_training: True
   # weighted_classes: False #no batch balancing for now

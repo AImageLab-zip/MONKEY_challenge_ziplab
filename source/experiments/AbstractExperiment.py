@@ -4,7 +4,7 @@ from copy import deepcopy
 
 from tqdm import tqdm
 from utils.data_preparation import DataPreparator
-from utils.data_utils import get_device, px_to_mm, write_json_file
+from utils.data_utils import get_device, load_yaml, px_to_mm, save_yaml, write_json_file
 from utils.logger import get_logger
 from wholeslidedata.image.wholeslideimage import WholeSlideImage
 from wholeslidedata.iterators import PatchConfiguration, create_patch_iterator
@@ -145,6 +145,16 @@ class AbstractExperiment:
         self.dataset_df, self.folds_paths_dict = self.data_prepator.prepare_data()
         return self.dataset_df, self.folds_paths_dict
 
+    def _load_fold_paths_dict(self, fold_path_dict):
+        self.fold_yaml_paths_dict = load_yaml(fold_path_dict)
+        if self.fold_yaml_paths_dict is None:
+            self.logger.error("Error loading fold yaml file.")
+            return -1
+        # inject fold splits to the config dict
+        self.wsd_config["wholeslidedata"]["default"]["yaml_source"] = (
+            self.fold_yaml_paths_dict
+        )
+
     def load_model(self):
         pass
 
@@ -159,6 +169,7 @@ class AbstractExperiment:
             self.logger.info(
                 "Training the model on single fold: {}...".format(self.fold)
             )
+            self._load_fold_paths_dict(self.folds_paths_dict[self.fold])
             self.train_eval_fold(
                 fold=self.fold, fold_path_dict=self.folds_paths_dict[self.fold]
             )
@@ -169,7 +180,11 @@ class AbstractExperiment:
             self.logger.info(
                 "Training fold {}/{}".format(fold + 1, len(self.folds_paths_dict))
             )
-            self.train_eval_fold(fold=fold, fold_path_dict=fold_path_dict)
+
+            # load the yaml file
+            self._load_fold_paths_dict(fold_path_dict)
+
+            self.train_eval_fold(fold=fold)
             self.logger.info(
                 "Training of fold {}/{} completed".format(
                     fold + 1, len(self.folds_paths_dict)
@@ -179,13 +194,17 @@ class AbstractExperiment:
         self.logger.info("Training of all folds completed")
         return 0
 
-    def train_eval_fold(self, fold, fold_path_dict):
+    def train_eval_fold(self, fold):
         pass
 
-    def eval_fold(self, fold, fold_path_dict):
+    def eval_fold(self, fold):
         self.logger.info(f"Evaluating the model on fold {fold}...")
 
-        self.validation_fold_dict = fold_path_dict["validation"]
+        assert self.model is not None, "Model is not loaded."
+        assert self.dataset_df is not None, "Dataset is not loaded."
+        assert self.fold_yaml_paths_dict is not None, "Folds paths are not loaded."
+
+        self.validation_fold_dict = self.fold_yaml_paths_dict["validation"]
 
         self.patch_configuration = PatchConfiguration(
             patch_shape=self.patch_shape,
