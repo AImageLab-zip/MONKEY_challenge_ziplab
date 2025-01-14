@@ -219,15 +219,17 @@ class AbstractExperiment:
             wsi_path = entry["wsi"]["path"]
             # wsa_path = entry["wsa"]
             wsi_id = os.path.basename(wsi_path).split(".")[0]
-            #remove the _PAS_CPG from the wsi_id
-            wsi_id = wsi_id.split("_PAS_CPG")[0]
+            # remove the _PAS_CPG from the wsi_id
+            if "_PAS_CPG" in wsi_id:
+                wsi_id = wsi_id.split("_PAS_CPG")[0]
+
             mask_path = self.dataset_df.loc[
                 self.dataset_df["Slide ID"] == wsi_id, "WSI Mask Path"
             ]
             progress_bar.set_description(f"Validating {wsi_id} ...")
 
             immune_cells_dict, monocytes_dict, lymphocytes_dict = self.eval_wsi(
-                wsi_path=wsi_path, mask_path=mask_path
+                wsi_path=str(wsi_path), mask_path=str(mask_path)
             )
 
             self._save_predictions(
