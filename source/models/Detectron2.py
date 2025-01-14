@@ -38,14 +38,19 @@ class WholeSlideDectectron2Trainer(DefaultTrainer):
 
     def build_train_loader(self, cfg):
         mode = "training"
-
-        training_batch_generator = create_batch_iterator(
-            user_config=self._user_config,
-            mode=mode,
-            cpus=self._cpus,
-            iterator_class=WholeSlideDetectron2Iterator,
-        )
-        return training_batch_generator
+        try:
+            # print("User config passed to batch iterator:", self._user_config)
+            training_batch_generator = create_batch_iterator(
+                user_config=self._user_config,
+                mode=mode,
+                cpus=self._cpus,
+                iterator_class=WholeSlideDetectron2Iterator,
+            )
+            assert training_batch_generator is not None, "Batch iterator returned None!"
+            return training_batch_generator
+        except Exception as e:
+            print(f"Error while creating batch iterator: {e}")
+            raise
 
 
 class BatchPredictor(DefaultPredictor):

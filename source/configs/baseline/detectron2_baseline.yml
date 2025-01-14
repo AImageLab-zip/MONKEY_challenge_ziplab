@@ -17,7 +17,7 @@ wholeslidedata:
           "default": {
               "yaml_source": "", #NOTE: refer to the dataset yaml_wsi_wsa_dir path!!!!
               "seed": 42,
-              "image_backend": "openslide",  # was "asap"
+              "image_backend": "asap",  # was "asap"
               "labels": {"ROI": 0, "lymphocytes": 1, "monocytes": 2},
               "batch_shape": {
                   "batch_size":, #also change the training batch size config with the same number

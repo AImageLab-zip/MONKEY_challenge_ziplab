@@ -49,9 +49,9 @@ class AbstractExperiment:
             return -1  # TODO: implement better error handling
 
         # inject configs seed in the wsd_config
-        self.wsd_config["seed"] = self.seed
+        self.wsd_config["seed"] = deepcopy(self.seed)
 
-        self.img_backend = self.wsd_config.get("image_backend", "openslide")
+        self.img_backend = deepcopy(self.wsd_config.get("image_backend", "openslide"))
 
         self.dataset_configs = self.config.get("dataset", {})
         if self.dataset_configs is None:
@@ -65,10 +65,14 @@ class AbstractExperiment:
         self.n_folds = self.dataset_configs.get("n_folds", 5)
 
         # patches and shape configs
+        # extract the patch shape and spacings from the wsd_config
         self.batch_shape = self.wsd_config["wholeslidedata"]["default"]["batch_shape"]
-        self.patch_shape = self.batch_shape.get("shape", (128, 128, 3))
-        self.spacings = (self.batch_shape.get("spacing", 0.5),)
-        self.y_shape = self.batch_shape.get("y_shape", (1000, 6))
+        # use the deep copy to avoid changing the original dict
+        self.patch_shape = deepcopy(self.batch_shape.get("shape", (128, 128, 3)))
+        self.spacings = deepcopy((self.batch_shape.get("spacing", 0.5),))
+        self.y_shape = deepcopy(self.batch_shape.get("y_shape", (1000, 6)))
+
+        # TODO: add the overlap and offset to the patch configuration yaml
         self.overlap = (0, 0)
         self.offset = (0, 0)
         self.center = False
@@ -138,14 +142,16 @@ class AbstractExperiment:
         # self.model_watch = getattr(self.args, "wandb_model_watch", False)
 
         # debug print for wsd config dict
-        self.logger.debug(f"wsd_config: {self.wsd_config}")
+        self.logger.debug(
+            f"\n{10*'='}\nwsd_config debug: {self.wsd_config}\n{10*'='}\n"
+        )
 
-    def load_data(self):
+    def prepare_data(self):
         self.data_prepator = DataPreparator(config=self.config)
         self.dataset_df, self.folds_paths_dict = self.data_prepator.prepare_data()
         return self.dataset_df, self.folds_paths_dict
 
-    def _load_fold_paths_dict(self, fold_path_dict):
+    def _load_fold(self, fold_path_dict):
         self.fold_yaml_paths_dict = load_yaml(fold_path_dict)
         if self.fold_yaml_paths_dict is None:
             self.logger.error("Error loading fold yaml file.")
@@ -162,14 +168,14 @@ class AbstractExperiment:
         pass
 
     def train(self):
-        self.dataset_df, self.folds_paths_dict = self.load_data()
+        self.dataset_df, self.folds_paths_dict = self.prepare_data()
 
         # if fold is specified, train on that fold only
         if self.fold is not None:
             self.logger.info(
                 "Training the model on single fold: {}...".format(self.fold)
             )
-            self._load_fold_paths_dict(self.folds_paths_dict[self.fold])
+            self._load_fold(self.folds_paths_dict[self.fold])
             self.train_eval_fold(
                 fold=self.fold, fold_path_dict=self.folds_paths_dict[self.fold]
             )
@@ -182,7 +188,7 @@ class AbstractExperiment:
             )
 
             # load the yaml file
-            self._load_fold_paths_dict(fold_path_dict)
+            self._load_fold(fold_path_dict)
 
             self.train_eval_fold(fold=fold)
             self.logger.info(
@@ -227,6 +233,8 @@ class AbstractExperiment:
                 self.dataset_df["Slide ID"] == wsi_id, "WSI Mask Path"
             ]
             progress_bar.set_description(f"Validating {wsi_id} ...")
+
+            self.logger.debug(f"WSI path: {mask_path}\nMask path: {mask_path}\n")
 
             immune_cells_dict, monocytes_dict, lymphocytes_dict = self.eval_wsi(
                 wsi_path=str(wsi_path), mask_path=str(mask_path)

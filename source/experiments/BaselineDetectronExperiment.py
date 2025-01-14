@@ -64,9 +64,11 @@ class BaselineDetectronExperiment(AbstractExperiment):
         save_yaml(self.cfg, save_dir=self.output_dir, file_name="model_config.yaml")
 
     def train_eval_fold(self, fold):
+        # set the fold path
         self.fold_path = os.path.join(self.output_dir, f"fold_{fold}")
         # make the directory for the fold
         os.makedirs(self.fold_path, exist_ok=True)
+        # set the output directory for the fold for detectron2
         self.cfg.OUTPUT_DIR = self.fold_path
 
         # TODO: bug here? if we use a pretrained model, we should not overwrite the weights?
@@ -75,7 +77,7 @@ class BaselineDetectronExperiment(AbstractExperiment):
         #     self.fold_path, f"model_final_{fold}.pth"
         # )
 
-        # check if model already exists
+        # check if model already exists, and decide if continuing training
         if os.path.exists(self.cfg.MODEL.WEIGHTS):
             self.logger.info(f"Model for fold {fold} already exists.")
             if not self.continue_training:
@@ -91,13 +93,15 @@ class BaselineDetectronExperiment(AbstractExperiment):
             file_name=f"wsd_config_fold_{fold}.yaml",
         )
 
+        # create the model instance
         self.model = ModelFactory().get_model(
             self.model_name, cfg=self.cfg, wsd_config=self.wsd_config
         )
 
+        # train the model on the fold and continue the training if required
         self.model.train(resume=self.continue_training)
 
-        # evaluate the model on the evaluation set
+        # evaluate the model on the evaluation set for the selected fold
         self.eval_fold(fold=fold)
 
     def _predict(self):
