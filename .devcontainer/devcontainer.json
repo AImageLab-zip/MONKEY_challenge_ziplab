@@ -18,10 +18,11 @@
             "extensions": [
                 "ms-python.python",
                 "ms-toolsai.jupyter",
-                "charliermarsh.ruff"
+                "charliermarsh.ruff",
+                "mhutchie.git-graph"
             ]
         }
     },
     "remoteUser": "vscode",
-    "postCreateCommand": "/venv/bin/pip install --no-cache-dir -r /workspace/requirements.txt"
+    "postCreateCommand": "/workspace/venv/bin/pip install --no-cache-dir -r /workspace/requirements.txt"
 }

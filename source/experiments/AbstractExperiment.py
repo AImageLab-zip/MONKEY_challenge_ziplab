@@ -15,7 +15,7 @@ class AbstractExperiment:
         # -- PROJECT CONFIGs -- #
         self.args = args
         self.config = config
-        self.logger = get_logger(name=str(self.__class__), args=args)
+        self.logger = get_logger(name=str(self.__class__.__name__), args=args)
 
         # debug flag
         self.debug = getattr(self.args, "debug", False)
@@ -49,9 +49,12 @@ class AbstractExperiment:
             return -1  # TODO: implement better error handling
 
         # inject configs seed in the wsd_config
-        self.wsd_config["seed"] = deepcopy(self.seed)
+        self.wsd_config["wholeslidedata"]["default"]["seed"] = self.seed
 
-        self.img_backend = deepcopy(self.wsd_config.get("image_backend", "openslide"))
+        self.img_backend = self.wsd_config["wholeslidedata"]["default"].get(
+            "image_backend", "openslide"
+        )
+        self.logger.info(f"Image backend: {self.img_backend}")
 
         self.dataset_configs = self.config.get("dataset", {})
         if self.dataset_configs is None:
@@ -125,6 +128,7 @@ class AbstractExperiment:
         self.patient_pred_dir = None
 
         # -- CLASS STATE CONSTANTS -- #
+        self.SPACING_MIN = 0.25  # minimum rounded micro-meter per pixel spacing (resolution) of the whole slide images of the challenges
         self.SPACING_CONST = 0.24199951445730394  # maximum micro-meter per pixel spacing (resolution) of the whole slide images
         self.JSON_FILENAME_INFLAMMATORY_CELLS = "detected-inflammatory-cells.json"
         self.JSON_FILENAME_LYMPHOCYTES = "detected-lymphocytes.json"
@@ -176,9 +180,7 @@ class AbstractExperiment:
                 "Training the model on single fold: {}...".format(self.fold)
             )
             self._load_fold(self.folds_paths_dict[self.fold])
-            self.train_eval_fold(
-                fold=self.fold, fold_path_dict=self.folds_paths_dict[self.fold]
-            )
+            self.train_eval_fold(fold=self.fold)
             return 0
         # if no fold is specified, train on all folds
         self.logger.info("Training the model on all folds...")
@@ -231,10 +233,10 @@ class AbstractExperiment:
 
             mask_path = self.dataset_df.loc[
                 self.dataset_df["Slide ID"] == wsi_id, "WSI Mask Path"
-            ]
+            ].values[0]
             progress_bar.set_description(f"Validating {wsi_id} ...")
 
-            self.logger.debug(f"WSI path: {mask_path}\nMask path: {mask_path}\n")
+            self.logger.debug(f"WSI path: {wsi_path}\nMask path: {mask_path}\n")
 
             immune_cells_dict, monocytes_dict, lymphocytes_dict = self.eval_wsi(
                 wsi_path=str(wsi_path), mask_path=str(mask_path)
@@ -270,19 +272,18 @@ class AbstractExperiment:
         counter_immune_cells = 0
         counter_lymphocytes = 0
         counter_monocytes = 0
-        spacing_min = 0.25  # was used in the original code to edit the annotations to bounding boxes
 
         iterator = create_patch_iterator(
             image_path=wsi_path,
             mask_path=mask_path,
             patch_configuration=self.patch_configuration,
             cpus=self.num_workers,
-            backend=self.img_backend,
-        )  # was backend='asap'
+            backend="asap",  # needs to be ASAP for the path iterator to work in prediction
+        )
 
-        ratio = self.spacing / spacing_min
+        ratio = self.spacings[0] / self.SPACING_MIN
         with WholeSlideImage(wsi_path) as wsi:
-            spacing = wsi.get_real_spacing(spacing_min)
+            spacing = wsi.get_real_spacing(self.SPACING_MIN)
             print(
                 f"Spacing: {spacing} - Spacing const: {self.SPACING_CONST} - ratio: {ratio}"
             )

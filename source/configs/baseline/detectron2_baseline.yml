@@ -16,7 +16,7 @@ wholeslidedata:
       "wholeslidedata": {
           "default": {
               "yaml_source": "", #NOTE: refer to the dataset yaml_wsi_wsa_dir path!!!!
-              "seed": 42,
+              "seed": "",
               "image_backend": "asap",  # was "asap"
               "labels": {"ROI": 0, "lymphocytes": 1, "monocytes": 2},
               "batch_shape": {
