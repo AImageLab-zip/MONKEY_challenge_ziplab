@@ -1,6 +1,8 @@
+import json
 import os
 import pprint
 import random
+from typing import Any
 
 import cv2
 
@@ -157,7 +159,53 @@ def show_image(image, title="Image", dpi=None, figsize=(10, 10)):
     plt.show()
 
 
+## MEASUREMENTS ##
+def px_to_mm(px: int, spacing: float):
+    """
+    Convert a length in pixels to millimeters.
+
+    Parameters:
+    - px: int
+        The length in pixels.
+    - spacing: float
+        The pixel spacing in micrometers per pixel.
+    """
+    return px * spacing / 1000
+
+
 ## FILE I/O ##
+
+
+def write_json_file(
+    *, json_dict: Any, save_dir: str, file_name: str, indent: int = 4
+) -> None:
+    """
+    Writes a JSON file to the specified directory and file name.
+
+    Args:
+        json_dict (Any): The dictionary to save as a JSON file.
+        save_dir (str): The directory where the JSON file will be saved.
+        file_name (str): The name of the JSON file (e.g., "data.json").
+        indent (int): Indentation level for pretty-printing JSON (default is 4).
+
+    Raises:
+        OSError: If there is an issue creating the directory or writing the file.
+    """
+    try:
+        # Ensure the directory exists
+        os.makedirs(save_dir, exist_ok=True)
+
+        # Construct the full file path
+        file_path = os.path.join(save_dir, file_name)
+
+        # Write the JSON content
+        with open(file_path, "w", encoding="utf-8") as f:
+            json.dump(json_dict, f, indent=indent, ensure_ascii=False)
+
+        print(f"JSON file successfully written to: {file_path}")
+    except Exception as e:
+        print(f"Error writing JSON file at {file_path}: {e}")
+        raise
 
 
 def load_yaml(file_path, default=None):
@@ -179,8 +227,8 @@ def load_yaml(file_path, default=None):
         if os.path.exists(file_path):
             with open(file_path, "r") as file:
                 yaml_file = yaml.safe_load(file)
-                print(f"Loaded YAML file from {file_path}:")
-                print(pprint.pformat(yaml_file, indent=4, compact=True))
+                print(f"Successfullt loaded YAML file from {file_path}")
+                # print(pprint.pformat(yaml_file, indent=4, compact=True))
                 return yaml_file
         else:
             if default is not None:

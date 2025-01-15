@@ -146,6 +146,7 @@ class DataPreparator:
         wsi_original_dir = os.path.join(
             self.dataset_dir, "images", "pas-original"
         )  # PAS Original
+        wsi_tissue_mask_dir = os.path.join(self.dataset_dir, "images", "tissue-masks")
 
         # List of annotation files
         wsa_list = glob.glob(wsa_dir)
@@ -162,15 +163,21 @@ class DataPreparator:
 
             # Check if the PAS_CPG image exists for the patient
             pas_cpg_path = os.path.join(wsi_pas_cpg_dir, patient_name + "_PAS_CPG.tif")
+            # save the associated ROI mask path
+            mask_path = os.path.join(wsi_tissue_mask_dir, patient_name + "_mask.tif")
+
             if os.path.isfile(pas_cpg_path):
                 progress_bar.set_description(
                     f"Processing {patient_name}"
                 )  # Update progress bar
 
-                # Update metadata DataFrame with paths for PAS_CPG image and annotation
+                # Update metadata DataFrame with paths for PAS_CPG image, mask and annotation
                 self.dataset_df.loc[
                     self.dataset_df["Slide ID"] == patient_name, "WSI PAS_CPG Path"
                 ] = pas_cpg_path
+                self.dataset_df.loc[
+                    self.dataset_df["Slide ID"] == patient_name, "WSI Mask Path"
+                ] = mask_path
                 self.dataset_df.loc[
                     self.dataset_df["Slide ID"] == patient_name, "Annotation Path"
                 ] = wsa
@@ -211,6 +218,11 @@ class DataPreparator:
         )
 
         self.logger.debug(f"Dataset firs rows:\n{self.dataset_df.head()}\n")
+
+        # save the updated metadata file
+        self.dataset_df.to_csv(
+            os.path.join(self.yaml_wsi_wsa_dir, "dataset_metadata_df.csv"), index=False
+        )
 
         return self.dataset_df
 

@@ -67,6 +67,15 @@ def get_args_and_config():
         dest="use_wandb",
         help="Disables wandb logging",
     )
+
+    parser.add_argument(
+        "--fold",
+        type=int,
+        default=None,
+        help="Fold number to train on",
+        required=False,
+    )
+
     parser.add_argument(
         "--test",
         action="store_false",
@@ -74,14 +83,14 @@ def get_args_and_config():
         dest="train",
         help="If True, only test the model, skipping training. Default is False.",
     )
-    
+
     parser.add_argument(
         "--continue_training",
         action="store_true",
         default=False,
         help="If True, continue training from existing model. Default is False.",
     )
-    
+
     parser.add_argument(
         "--model_dir",
         type=str,
@@ -99,10 +108,12 @@ def get_args_and_config():
     args, _ = parser.parse_known_args()
     config_path = args.config
     logger = get_logger(name="argparser", args=args)
-    
-    #check if model path is passed if continue_training is True
+
+    # check if model path is passed if continue_training is True
     if args.continue_training and args.model_dir is None:
-        raise ValueError("Model directory path must be provided if continue_training is True.")
+        raise ValueError(
+            "Model directory path must be provided if continue_training is True."
+        )
 
     # Load configuration from YAML file if it exists
     logger.info(
@@ -113,7 +124,8 @@ def get_args_and_config():
 
     formatted_loaded_args = pprint.pformat(vars(args), indent=4)
     formatted_config = pprint.pformat(config, indent=4)
-    logger.info(
+    logger.info("Load of args and config completed!")
+    logger.debug(
         f"Load of args and config completed!\nLoaded the following args:\n{formatted_loaded_args}\nLoaded the following configs:\n{formatted_config}\n{'='*10}"
     )
 

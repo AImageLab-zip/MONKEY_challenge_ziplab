@@ -4,21 +4,9 @@ import pprint
 import yaml
 from detectron2 import model_zoo
 from detectron2.config import get_cfg
-from detectron2.engine import DefaultTrainer
-from detectron2.modeling import build_model
+from models import ModelFactory
 from utils.data_utils import load_yaml, save_yaml
-from wholeslidedata.interoperability.detectron2.iterator import (
-    WholeSlideDetectron2Iterator,
-)
-from wholeslidedata.interoperability.detectron2.predictor import (
-    Detectron2DetectionPredictor,
-)
-from wholeslidedata.interoperability.detectron2.trainer import (
-    WholeSlideDectectron2Trainer,
-)
-from wholeslidedata.iterators import create_batch_iterator
 
-# from wholeslidedata.visualization.plotting import plot_boxes
 from .AbstractExperiment import AbstractExperiment
 
 
@@ -41,57 +29,55 @@ class BaselineDetectronExperiment(AbstractExperiment):
             )  # download the model weights to fine-tune
 
         self.cfg.SEED = self.seed  # set the seed for reproducibility
-
         self.cfg.DATASETS.TRAIN = (self.dataset_name + "_train",)
-        self.cfg.DATASETS.TEST = (self.dataset_name + "_val",)
-        # self.cfg.DATASETS.TRAIN = ("detection_dataset2",)
-        # self.cfg.DATASETS.TEST = ()
+        # self.cfg.DATASETS.TEST = (self.dataset_name + "_val",)
+        self.cfg.DATASETS.TEST = ()
         self.cfg.DATALOADER.NUM_WORKERS = self.num_workers
+        self.cfg.MODEL.ROI_HEADS.NUM_CLASSES = self.num_classes
+        self.cfg.MODEL.ROI_HEADS.SCORE_THRESH_TEST = self.conf_threshold
+        self.cfg.MODEL.ROI_HEADS.NMS_THRESH_TEST = self.nms_threshold
+        self.cfg.MODEL.RPN.NMS_THRESH = self.nms_threshold
 
-        # self.cfg.MODEL.ROI_HEADS.BATCH_SIZE_PER_IMAGE = (
-        #     512  # was 512 #TODO: is this correct?
-        # )
-        self.cfg.MODEL.ROI_HEADS.NUM_CLASSES = self.num_classes  # was 1
+        self.cfg.SOLVER.IMS_PER_BATCH = self.batch_size
+        self.cfg.SOLVER.BASE_LR = self.learning_rate
+        self.cfg.SOLVER.MAX_ITER = self.epochs  # 2000 iterations seems good enough for this toy dataset; you may need to train longer for a practical dataset
 
-        # self.cfg.SOLVER.IMS_PER_BATCH = (
-        #     self.batch_size
-        # )  # was 10 #TODO: is this correct?
-        # self.cfg.SOLVER.BASE_LR = self.learning_rate  # pick a good lr, was 0.001
-        # self.cfg.SOLVER.MAX_ITER = self.epochs  # 2000 iterations seems good enough for this toy dataset; you may need to train longer for a practical dataset
+        # NOTE: hardcoding the values for now!
+        self.cfg.MODEL.ROI_HEADS.BATCH_SIZE_PER_IMAGE = 512  # was 512
+        self.cfg.MODEL.ANCHOR_GENERATOR.SIZES = [[16, 24, 32]]
+        # self.cfg.SOLVER.STEPS = (10, 100, 250)
+        self.cfg.SOLVER.WARMUP_ITERS = 0
+        self.cfg.SOLVER.GAMMA = 0.5
 
-        # self.cfg.MODEL.ANCHOR_GENERATOR.SIZES = [
-        #     [16, 24, 32]
-        # ]  # TODO: don't hardcode this
-        # self.cfg.SOLVER.STEPS = (10, 100, 250)  # TODO: don't hardcode this
-        # self.cfg.SOLVER.WARMUP_ITERS = 0  # TODO: don't hardcode this
-        # self.cfg.SOLVER.GAMMA = 0.5  # TODO: don't hardcode this
+        # - OUTPUTs CONFIGs -#
 
-        self.experiment_name = f"{self.model_name}_pretrained_{self.pretrained}_e{self.cfg.SOLVER.MAX_ITER}_b{self.cfg.SOLVER.IMS_PER_BATCH}_lr{self.cfg.SOLVER.BASE_LR}_t{self.timestamp}"
-        self.output_dir = os.path.join(self.output_dir, self.experiment_name)
-
-        self.cfg.OUTPUT_DIR = self.output_dir
-        # create the output directory
-        os.makedirs(self.output_dir, exist_ok=True)
-
-        # save the config file
-        save_yaml(self.cfg, save_dir=self.output_dir, file_name="config.yaml")
-
-    def train_fold(self, fold, fold_path_dict):
         # check if model directory is provided else use the output directory
         if self.model_dir is not None:
             self.output_dir = self.model_dir
+        else:
+            self.experiment_name = f"{self.model_name}_pretrained_{self.pretrained}_e{self.cfg.SOLVER.MAX_ITER}_b{self.cfg.SOLVER.IMS_PER_BATCH}_lr{self.cfg.SOLVER.BASE_LR}"
+            self.output_dir = os.path.join(self.output_base_dir, self.experiment_name)
 
-        self.model_path = os.path.join(self.output_dir, f"fold_{fold}")
+        # create the output directory
+        os.makedirs(self.output_dir, exist_ok=True)
+        # save the config file
+        save_yaml(self.cfg, save_dir=self.output_dir, file_name="model_config.yaml")
+
+    def train_eval_fold(self, fold):
+        # set the fold path
+        self.fold_path = os.path.join(self.output_dir, f"fold_{fold}")
         # make the directory for the fold
-        os.makedirs(self.model_path, exist_ok=True)
+        os.makedirs(self.fold_path, exist_ok=True)
+        # set the output directory for the fold for detectron2
+        self.cfg.OUTPUT_DIR = self.fold_path
 
         # TODO: bug here? if we use a pretrained model, we should not overwrite the weights?
         # set the model weights path
         # self.cfg.MODEL.WEIGHTS = os.path.join(
-        #     self.model_path, f"model_final_{fold}.pth"
+        #     self.fold_path, f"model_final_{fold}.pth"
         # )
 
-        # check if model already exists
+        # check if model already exists, and decide if continuing training
         if os.path.exists(self.cfg.MODEL.WEIGHTS):
             self.logger.info(f"Model for fold {fold} already exists.")
             if not self.continue_training:
@@ -100,45 +86,23 @@ class BaselineDetectronExperiment(AbstractExperiment):
             else:
                 self.logger.info("Continuing training from existing model.")
 
-        # load the yaml file
-        self.fold_yaml_paths_dict = load_yaml(fold_path_dict)
-        if self.fold_yaml_paths_dict is None:
-            self.logger.error("Error loading fold yaml file.")
-            return -1
-
-        # self.fold_training_yaml_paths_dict = self.fold_yaml_paths_dict["training"]
-        # self.fold_validation_yaml_paths_dict = self.fold_yaml_paths_dict["validation"]
-
-        # inject fold splits to the config dict
-        self.wsd_config["wholeslidedata"]["default"]["yaml_source"] = (
-            self.fold_yaml_paths_dict
-        )
-
         # save the updated config to the model directory
         save_yaml(
             self.wsd_config,
-            save_dir=self.model_path,
+            save_dir=self.fold_path,
             file_name=f"wsd_config_fold_{fold}.yaml",
         )
 
-        # self.wsd_config["wholeslidedata"]["default"]["yaml_source"] = (
-        #     self.fold_training_yaml_paths_dict
-        # )
-
-        # self.logger.debug(self.wsd_config["wholeslidedata"]["train"])
-
-        self.model = build_model(self.cfg)
-
-        pytorch_total_params = sum(
-            p.numel() for p in self.model.parameters() if p.requires_grad
+        # create the model instance
+        self.model = ModelFactory().get_model(
+            self.model_name, cfg=self.cfg, wsd_config=self.wsd_config
         )
-        self.logger.info("Parameter Count:\n" + str(pytorch_total_params))
 
-        self.trainer = WholeSlideDectectron2Trainer(
-            cfg=self.cfg, user_config=self.wsd_config, cpus=self.num_workers
-        )
-        self.trainer.resume_or_load(resume=self.continue_training)
-        self.trainer.train()
+        # train the model on the fold and continue the training if required
+        self.model.train(resume=self.continue_training)
+
+        # evaluate the model on the evaluation set for the selected fold
+        self.eval_fold(fold=fold)
 
     def _predict(self):
         pass

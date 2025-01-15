@@ -16,8 +16,8 @@ wholeslidedata:
       "wholeslidedata": {
           "default": {
               "yaml_source": "", #NOTE: refer to the dataset yaml_wsi_wsa_dir path!!!!
-              "seed": 42,
-              "image_backend": "openslide",  # was "asap"
+              "seed": "",
+              "image_backend": "asap",  # was "asap"
               "labels": {"ROI": 0, "lymphocytes": 1, "monocytes": 2},
               "batch_shape": {
                   "batch_size":, #also change the training batch size config with the same number
@@ -95,6 +95,9 @@ model:
   name: "detectron2" #baseline model used in the example code of the challenge
   config_url: "COCO-Detection/faster_rcnn_X_101_32x8d_FPN_3x.yaml"
   pretrained: True #no pretraining, testing what happens with non initialized weights
+  conf_threshold: 0.1 #detection confidence level required to have a bbox detection
+  nms_threshold: 0.3 #non-maxima suppression threshold
+
   #freeze_all_layers: False #no layer freezing, we need to train every layer
   #amount_frozen_layers: 0
 
@@ -103,8 +106,8 @@ optimizer:
   #weighted_loss: False #testing what happens if no wl with huge class imbalance
 
 training:
-  learning_rate: 0.0003
-  epochs: 2000 
+  learning_rate: 0.001
+  epochs: 10
   batch_size: 10
   continue_training: True
   # weighted_classes: False #no batch balancing for now
