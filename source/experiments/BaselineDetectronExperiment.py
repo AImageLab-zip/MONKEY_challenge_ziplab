@@ -50,7 +50,7 @@ class BaselineDetectronExperiment(AbstractExperiment):
         self.cfg.SOLVER.GAMMA = 0.5
 
         # - OUTPUTs CONFIGs -#
-        
+
         # check if model directory is provided else use the output directory
         if self.model_dir is not None:
             self.output_dir = self.model_dir
@@ -102,7 +102,7 @@ class BaselineDetectronExperiment(AbstractExperiment):
         self.model.train(resume=self.continue_training)
 
         # evaluate the model on the evaluation set for the selected fold
-        # self.eval_fold(fold=fold)
+        self.eval_fold(fold=fold)
 
     def _predict(self):
         pass

@@ -2,6 +2,9 @@ import os
 import time
 from copy import deepcopy
 
+from evaluation.custom_evaluate import eval_metrics
+from evaluation.custom_json_to_xml import json_to_xml
+from evaluation.custom_plot_froc import plot_overall_froc
 from tqdm import tqdm
 from utils.data_preparation import DataPreparator
 from utils.data_utils import get_device, load_yaml, px_to_mm, save_yaml, write_json_file
@@ -95,6 +98,7 @@ class AbstractExperiment:
         self.output_dir = None
         self.preds_dir = None
         self.patient_pred_dir = None
+        self.metrics_dir = None
 
         # -- CLASS STATE CONSTANTS -- #
         self.SPACING_MIN = 0.25  # minimum rounded micro-meter per pixel spacing (resolution) of the whole slide images of the challenges
@@ -253,11 +257,14 @@ class AbstractExperiment:
             )
 
             self._save_predictions(
+                fold=fold,
                 wsi_id=wsi_id,
                 immune_cells_dict=immune_cells_dict,
                 monocytes_dict=monocytes_dict,
                 lymphocytes_dict=lymphocytes_dict,
             )
+
+        self._compute_overall_metrics(fold=fold)
 
     def eval_wsi(self, wsi_path, mask_path):
         output_dict = {
@@ -390,13 +397,14 @@ class AbstractExperiment:
 
     def _save_predictions(
         self,
+        fold,
         wsi_id,
         immune_cells_dict,
         monocytes_dict,
         lymphocytes_dict,
     ):
         # making output directories for saving the predictions
-        self.preds_dir = os.path.join(self.output_dir, "results")
+        self.preds_dir = os.path.join(self.output_dir, "results", fold)
         self.patient_pred_dir = os.path.join(self.preds_dir, wsi_id)
 
         # create the patient prediction directory if it doesn't exist
@@ -420,6 +428,35 @@ class AbstractExperiment:
             save_dir=self.patient_pred_dir,
             file_name=self.JSON_FILENAME_LYMPHOCYTES,
         )
+
+    def _compute_overall_metrics(
+        self, fold=None, plot_froc=True, plot_froc_single_wsis=False
+    ):
+        assert self.preds_dir is not None, "Predictions directory is not set."
+        assert fold is not None, "Fold number is not set."
+
+        self.metrics_dir = os.path.join(self.output_dir, "results")
+        os.makedirs(self.metrics_dir, exist_ok=True)
+
+        metrics_fold_filename = f"metrics_fold_{fold}.json"
+
+        eval_metrics(
+            predictions_folder=self.preds_dir,
+            ground_truth_folder=self.ground_thuth_dir,
+            save_path=self.metrics_dir,
+            filename=metrics_fold_filename,
+        )
+
+        metrics_file_path = os.path.join(self.metrics_dir, metrics_fold_filename)
+        assert os.path.exists(metrics_file_path), "Metrics file not found!."
+
+        if plot_froc is True:
+            plot_overall_froc(
+                input_path=metrics_file_path,
+                output_path=self.metrics_dir,
+                plot_per_file=plot_froc_single_wsis,
+                filename=f"froc_curves_aggregated_{fold}.png",
+            )
 
     def test(self):
         pass
