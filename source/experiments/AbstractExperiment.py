@@ -48,6 +48,15 @@ class AbstractExperiment:
             print("Dataset configurations not found in the configuration file.")
             return -1  # TODO: implement better error handling
 
+        self.dataset_path = self.dataset_configs.get("path", None)
+        if self.dataset_path is None:
+            print("Dataset path not found in the configuration file.")
+            return -1
+
+        self.ground_truth_dir = os.path.join(
+            self.dataset_path, "annotations", "json_mm"
+        )  # json mm annotation gt path
+
         self.num_classes = self.dataset_configs.get("num_classes", 1)
 
         self.dataset_name = self.dataset_configs.get("name", "default_dataset")
@@ -264,7 +273,14 @@ class AbstractExperiment:
                 lymphocytes_dict=lymphocytes_dict,
             )
 
+            if self.debug:
+                self.logger.debug(
+                    "Debug mode enabled. Exiting after eval on first WSI."
+                )
+                break
+
         self._compute_overall_metrics(fold=fold)
+        self.logger.info(f"Evaluation completed for fold {fold}")
 
     def eval_wsi(self, wsi_path, mask_path):
         output_dict = {
@@ -402,11 +418,13 @@ class AbstractExperiment:
         immune_cells_dict,
         monocytes_dict,
         lymphocytes_dict,
+        save_asap_xml=False,
     ):
         # making output directories for saving the predictions
-        self.preds_dir = os.path.join(self.output_dir, "results", fold)
-        self.patient_pred_dir = os.path.join(self.preds_dir, wsi_id)
+        self.preds_dir = os.path.join(self.output_dir, "results", f"fold_{fold}")
+        os.makedirs(self.preds_dir, exist_ok=True)
 
+        self.patient_pred_dir = os.path.join(self.preds_dir, wsi_id)
         # create the patient prediction directory if it doesn't exist
         os.makedirs(self.patient_pred_dir, exist_ok=True)
 
@@ -429,6 +447,38 @@ class AbstractExperiment:
             file_name=self.JSON_FILENAME_LYMPHOCYTES,
         )
 
+        lymphocytes_json = os.path.join(
+            self.patient_pred_dir, self.JSON_FILENAME_LYMPHOCYTES
+        )
+        monocytes_json = os.path.join(
+            self.patient_pred_dir, self.JSON_FILENAME_MONOCYTES
+        )
+        inflammatory_cells_json = os.path.join(
+            self.patient_pred_dir, self.JSON_FILENAME_INFLAMMATORY_CELLS
+        )
+
+        lymphocytes_xml = os.path.join(
+            self.patient_pred_dir, f"lymphocytes_preds_{wsi_id}.xml"
+        )
+        monocytes_xml = os.path.join(
+            self.patient_pred_dir, f"monocytes_preds_{wsi_id}.xml"
+        )
+        inflammatory_cells_xml = os.path.join(
+            self.patient_pred_dir, f"inflammatory_cells_preds_{wsi_id}.xml"
+        )
+
+        # TODO: bugged, nees fix if we want to visualize the predictions in ASAP!!!
+        if save_asap_xml:
+            self.logger.info("Saving json predictions as ASAP XML files...")
+            # save asap xml file with the predictions for overall immune cells along single monocytes and lymphocytes predictions
+
+            # inflammatory cells
+            json_to_xml(inflammatory_cells_json, inflammatory_cells_xml)
+            # lymphocytes
+            json_to_xml(lymphocytes_json, lymphocytes_xml)
+            # monocytes
+            json_to_xml(monocytes_json, monocytes_xml)
+
     def _compute_overall_metrics(
         self, fold=None, plot_froc=True, plot_froc_single_wsis=False
     ):
@@ -440,22 +490,35 @@ class AbstractExperiment:
 
         metrics_fold_filename = f"metrics_fold_{fold}.json"
 
-        eval_metrics(
+        self.logger.info("Computing metrics...")
+
+        metrics = eval_metrics(
             predictions_folder=self.preds_dir,
-            ground_truth_folder=self.ground_thuth_dir,
+            ground_truth_folder=self.ground_truth_dir,
             save_path=self.metrics_dir,
             filename=metrics_fold_filename,
+        )
+
+        self.logger.info(
+            f"FROC scores for lymphocytes: {metrics['aggregates']['lymphocytes']['froc_score_aggr']}"
+        )
+        self.logger.info(
+            f"FROC scores for monocytes: {metrics['aggregates']['monocytes']['froc_score_aggr']}"
+        )
+        self.logger.info(
+            f"FROC scores for inflammatory-cells: {metrics['aggregates']['inflammatory-cells']['froc_score_aggr']}"
         )
 
         metrics_file_path = os.path.join(self.metrics_dir, metrics_fold_filename)
         assert os.path.exists(metrics_file_path), "Metrics file not found!."
 
         if plot_froc is True:
+            self.logger.info("Plotting FROC curve(s)...")
             plot_overall_froc(
                 input_path=metrics_file_path,
                 output_path=self.metrics_dir,
                 plot_per_file=plot_froc_single_wsis,
-                filename=f"froc_curves_aggregated_{fold}.png",
+                filename=f"froc_curves_aggregated_fold_{fold}.png",
             )
 
     def test(self):

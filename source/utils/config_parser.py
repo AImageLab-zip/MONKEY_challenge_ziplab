@@ -39,7 +39,7 @@ def load_yaml(yaml_path, logger):
             config = yaml.safe_load(file)
             logger.info(f"Loaded configuration from {yaml_path}:")
             config_formatted = pprint.pformat(config, indent=4)
-            logger.debug(config_formatted)
+            # logger.debug(config_formatted)
     else:
         logger.info(
             f"Configuration file {yaml_path} does not exist.\nLoading empty config dictionary."

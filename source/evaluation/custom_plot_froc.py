@@ -155,10 +155,10 @@ class FrocCurveDisplay(_BinaryClassifierCurveDisplayMixin):
 def plot_froc(
     fps: np.ndarray,
     total_sensitivity: np.ndarray,
-    froc_score: float | None = None,
-    name: str | None = None,
-    pos_label: str | None = None,
-    froc_thresholds: list[float] | None = None,
+    froc_score: float = None,
+    name: str = None,
+    pos_label: str = None,
+    froc_thresholds: list = None,
     **kwargs,
 ) -> FrocCurveDisplay:
     """
@@ -193,7 +193,7 @@ def plot_froc(
     # Add vertical lines at eval_thresholds
     if froc_thresholds is not None:
         for threshold in froc_thresholds:
-            ax.axvline(x=threshold, color="gray", linestyle="--", alpha=0.7)
+            disp.ax_.axvline(x=threshold, color="gray", linestyle="--", alpha=0.7)
 
     return disp
 
