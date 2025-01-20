@@ -1,6 +1,5 @@
 #!/bin/bash
 
-
 #SBATCH --account=grana_urologia
 #SBATCH --job-name=monkey_challenge_task
 #SBATCH --partition=all_usr_prod 
@@ -39,41 +38,46 @@ echo "== Loading modules and activating env... =="
 
 . /usr/local/anaconda3/etc/profile.d/conda.sh
 conda deactivate ##deactivate any active conda environment
-## load the modules you need
+
+## Load the necessary modules
 module unload cuda
-module load cuda/11.0 #load old cuda version
-# ## activate your virtual environment using it's path (example)
+module load cuda/11.0 # Load compatible CUDA version
+
+## Activate your virtual environment
 conda activate /work/grana_urologia/MONKEY_challenge/monkey_env
-#source /work/grana_urologia/MONKEY_challenge/monkey_env/bin/activate
 
-# export env variables
-
+# Export ASAP-specific environment variables
+echo "== Exporting ASAP-related environment variables... =="
+# Export paths for ASAP binaries and libraries
 export PATH=/work/grana_urologia/MONKEY_challenge/asap/opt/ASAP/bin:$PATH
 export LD_LIBRARY_PATH=/work/grana_urologia/MONKEY_challenge/asap/opt/ASAP/lib:$LD_LIBRARY_PATH
-export PYTHONPATH=/work/grana_urologia/MONKEY_challenge/asap/opt/ASAP/lib/python3.8/site-packages:$PYTHONPATH
+export LD_LIBRARY_PATH=/work/grana_urologia/MONKEY_challenge/asap/usr/lib/x86_64-linux-gnu:$LD_LIBRARY_PATH
 
-echo "== Environment activated! =="
+# Print the environment variables for debugging (optional)
+echo "PATH: $PATH"
+echo "LD_LIBRARY_PATH: $LD_LIBRARY_PATH"
 
-echo "== Exporting environment variables... =="
-## optional: export some environment variables
-##export my_var1="Hello_World!"
-echo "== Done exporting environment variables! =="
+# # Ensure ASAP is properly injected into Python's library path
+# echo "== Injecting ASAP path into Python library... =="
+# echo "/work/grana_urologia/MONKEY_challenge/asap/opt/ASAP/bin" > /work/grana_urologia/MONKEY_challenge/monkey_env/lib/python3.8/site-packages/asap.pth
+
+echo "== Environment activated and variables exported! =="
 
 echo "========================="
 
-echo "== Running scripts =="
+echo "== Running script =="
 
+# Navigate to your source folder
 cd /work/grana_urologia/MONKEY_challenge/source
-## run your python script (example with args)
 
-python main.py --config=/work/grana_urologia/MONKEY_challenge/source/configs/baseline/detectron2_baseline.yml
+# Run your Python script
+python main.py --config=/work/grana_urologia/MONKEY_challenge/source/configs/baseline/detectron2_baseline.yml --fold=4
 
 echo "== Finished running script! =="
 
 echo "== Deactivating environment... =="
-
-deactivate ##deactivate the virtual environment
-module unload cuda # unload the modules
+conda deactivate ## Deactivate the virtual environment
+module unload cuda # Unload CUDA modules
 
 echo "========================="
-echo "== finished at $(date)"
+echo "== Finished at $(date) =="

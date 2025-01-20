@@ -6,8 +6,11 @@
 monkey_env/*
 monkey_env
 
-## asap install
-
+## asap and libs install
+local_dependencies/*
+local_dependencies
+local_asap/*
+local_asap
 asap/*
 asap
 
