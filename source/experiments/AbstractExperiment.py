@@ -2,6 +2,9 @@ import os
 import time
 from copy import deepcopy
 
+from evaluation.custom_evaluate import eval_metrics
+from evaluation.custom_json_to_xml import json_to_xml
+from evaluation.custom_plot_froc import plot_overall_froc
 from tqdm import tqdm
 from utils.data_preparation import DataPreparator
 from utils.data_utils import get_device, load_yaml, px_to_mm, save_yaml, write_json_file
@@ -40,45 +43,25 @@ class AbstractExperiment:
             self.num_workers = int(os.environ.get("SLURM_CPUS_PER_TASK", 2))
 
         # -- DATA CONFIGs -- #
-        self.wsd_config = self.config.get("wholeslidedata", {})["user_config"]
-
-        if self.wsd_config is None:
-            print(
-                "Whole Slide Data configurations not found in the configuration file."
-            )
-            return -1  # TODO: implement better error handling
-
-        # inject configs seed in the wsd_config
-        self.wsd_config["wholeslidedata"]["default"]["seed"] = self.seed
-
-        self.img_backend = self.wsd_config["wholeslidedata"]["default"].get(
-            "image_backend", "openslide"
-        )
-        self.logger.info(f"Image backend: {self.img_backend}")
-
         self.dataset_configs = self.config.get("dataset", {})
         if self.dataset_configs is None:
             print("Dataset configurations not found in the configuration file.")
             return -1  # TODO: implement better error handling
+
+        self.dataset_path = self.dataset_configs.get("path", None)
+        if self.dataset_path is None:
+            print("Dataset path not found in the configuration file.")
+            return -1
+
+        self.ground_truth_dir = os.path.join(
+            self.dataset_path, "annotations", "json_mm"
+        )  # json mm annotation gt path
 
         self.num_classes = self.dataset_configs.get("num_classes", 1)
 
         self.dataset_name = self.dataset_configs.get("name", "default_dataset")
 
         self.n_folds = self.dataset_configs.get("n_folds", 5)
-
-        # patches and shape configs
-        # extract the patch shape and spacings from the wsd_config
-        self.batch_shape = self.wsd_config["wholeslidedata"]["default"]["batch_shape"]
-        # use the deep copy to avoid changing the original dict
-        self.patch_shape = deepcopy(self.batch_shape.get("shape", (128, 128, 3)))
-        self.spacings = deepcopy((self.batch_shape.get("spacing", 0.5),))
-        self.y_shape = deepcopy(self.batch_shape.get("y_shape", (1000, 6)))
-
-        # TODO: add the overlap and offset to the patch configuration yaml
-        self.overlap = (0, 0)
-        self.offset = (0, 0)
-        self.center = False
 
         # -- MODEL CONFIGs -- #
         self.model_config = self.config.get("model", {})
@@ -99,8 +82,6 @@ class AbstractExperiment:
             return -1
 
         self.batch_size = self.training_config.get("batch_size", 32)
-        # inject batch size in the wsd config
-        self.batch_shape["batch_size"] = self.batch_size
 
         self.learning_rate = self.training_config.get("learning_rate", 0.001)
         self.epochs = self.training_config.get("epochs", 10)
@@ -126,6 +107,7 @@ class AbstractExperiment:
         self.output_dir = None
         self.preds_dir = None
         self.patient_pred_dir = None
+        self.metrics_dir = None
 
         # -- CLASS STATE CONSTANTS -- #
         self.SPACING_MIN = 0.25  # minimum rounded micro-meter per pixel spacing (resolution) of the whole slide images of the challenges
@@ -145,6 +127,42 @@ class AbstractExperiment:
         # set-up the optional model params and gradient watch by wand-db (if enabled)
         # self.model_watch = getattr(self.args, "wandb_model_watch", False)
 
+        # # set up the wsd config dictionary, without wsi and wsa paths
+        # self._set_wsd_config()
+
+    def _set_wsd_config(self):
+        self.wsd_config = deepcopy(self.config.get("wholeslidedata", {})["user_config"])
+
+        if self.wsd_config is None:
+            print(
+                "Whole Slide Data configurations not found in the configuration file."
+            )
+            return -1  # TODO: implement better error handling
+
+        # inject configs seed in the wsd_config
+        self.wsd_config["wholeslidedata"]["default"]["seed"] = self.seed
+
+        self.img_backend = self.wsd_config["wholeslidedata"]["default"].get(
+            "image_backend", "openslide"
+        )
+        self.logger.info(f"Image backend: {self.img_backend}")
+
+        # patches and shape configs
+        # extract the patch shape and spacings from the wsd_config
+        self.batch_shape = self.wsd_config["wholeslidedata"]["default"]["batch_shape"]
+        # use the deep copy to avoid changing the original dict
+        self.patch_shape = deepcopy(self.batch_shape.get("shape", (128, 128, 3)))
+        self.spacings = deepcopy((self.batch_shape.get("spacing", 0.5),))
+        self.y_shape = deepcopy(self.batch_shape.get("y_shape", (1000, 6)))
+
+        # TODO: add the overlap and offset to the patch configuration yaml
+        self.overlap = (0, 0)
+        self.offset = (0, 0)
+        self.center = False
+
+        # inject batch size in the wsd config
+        self.batch_shape["batch_size"] = self.batch_size
+
         # debug print for wsd config dict
         self.logger.debug(
             f"\n{10*'='}\nwsd_config debug: {self.wsd_config}\n{10*'='}\n"
@@ -156,11 +174,15 @@ class AbstractExperiment:
         return self.dataset_df, self.folds_paths_dict
 
     def _load_fold(self, fold_path_dict):
+        # set up the wsd config dictionary, without wsi and wsa paths
+        self._set_wsd_config()
+
         self.fold_yaml_paths_dict = load_yaml(fold_path_dict)
         if self.fold_yaml_paths_dict is None:
             self.logger.error("Error loading fold yaml file.")
             return -1
-        # inject fold splits to the config dict
+
+        # inject fold splits (wsa and wsi paths) to the wsd config dict
         self.wsd_config["wholeslidedata"]["default"]["yaml_source"] = deepcopy(
             self.fold_yaml_paths_dict
         )
@@ -172,7 +194,8 @@ class AbstractExperiment:
         pass
 
     def train(self):
-        self.dataset_df, self.folds_paths_dict = self.prepare_data()
+        if self.dataset_df is None or self.folds_paths_dict is None:
+            self.dataset_df, self.folds_paths_dict = self.prepare_data()
 
         # if fold is specified, train on that fold only
         if self.fold is not None:
@@ -243,11 +266,21 @@ class AbstractExperiment:
             )
 
             self._save_predictions(
+                fold=fold,
                 wsi_id=wsi_id,
                 immune_cells_dict=immune_cells_dict,
                 monocytes_dict=monocytes_dict,
                 lymphocytes_dict=lymphocytes_dict,
             )
+
+            if self.debug:
+                self.logger.debug(
+                    "Debug mode enabled. Exiting after eval on first WSI."
+                )
+                break
+
+        self._compute_overall_metrics(fold=fold)
+        self.logger.info(f"Evaluation completed for fold {fold}")
 
     def eval_wsi(self, wsi_path, mask_path):
         output_dict = {
@@ -380,15 +413,18 @@ class AbstractExperiment:
 
     def _save_predictions(
         self,
+        fold,
         wsi_id,
         immune_cells_dict,
         monocytes_dict,
         lymphocytes_dict,
+        save_asap_xml=False,
     ):
         # making output directories for saving the predictions
-        self.preds_dir = os.path.join(self.output_dir, "results")
-        self.patient_pred_dir = os.path.join(self.preds_dir, wsi_id)
+        self.preds_dir = os.path.join(self.output_dir, "results", f"fold_{fold}")
+        os.makedirs(self.preds_dir, exist_ok=True)
 
+        self.patient_pred_dir = os.path.join(self.preds_dir, wsi_id)
         # create the patient prediction directory if it doesn't exist
         os.makedirs(self.patient_pred_dir, exist_ok=True)
 
@@ -410,6 +446,80 @@ class AbstractExperiment:
             save_dir=self.patient_pred_dir,
             file_name=self.JSON_FILENAME_LYMPHOCYTES,
         )
+
+        lymphocytes_json = os.path.join(
+            self.patient_pred_dir, self.JSON_FILENAME_LYMPHOCYTES
+        )
+        monocytes_json = os.path.join(
+            self.patient_pred_dir, self.JSON_FILENAME_MONOCYTES
+        )
+        inflammatory_cells_json = os.path.join(
+            self.patient_pred_dir, self.JSON_FILENAME_INFLAMMATORY_CELLS
+        )
+
+        lymphocytes_xml = os.path.join(
+            self.patient_pred_dir, f"lymphocytes_preds_{wsi_id}.xml"
+        )
+        monocytes_xml = os.path.join(
+            self.patient_pred_dir, f"monocytes_preds_{wsi_id}.xml"
+        )
+        inflammatory_cells_xml = os.path.join(
+            self.patient_pred_dir, f"inflammatory_cells_preds_{wsi_id}.xml"
+        )
+
+        # TODO: bugged, nees fix if we want to visualize the predictions in ASAP!!!
+        if save_asap_xml:
+            self.logger.info("Saving json predictions as ASAP XML files...")
+            # save asap xml file with the predictions for overall immune cells along single monocytes and lymphocytes predictions
+
+            # inflammatory cells
+            json_to_xml(inflammatory_cells_json, inflammatory_cells_xml)
+            # lymphocytes
+            json_to_xml(lymphocytes_json, lymphocytes_xml)
+            # monocytes
+            json_to_xml(monocytes_json, monocytes_xml)
+
+    def _compute_overall_metrics(
+        self, fold=None, plot_froc=True, plot_froc_single_wsis=False
+    ):
+        assert self.preds_dir is not None, "Predictions directory is not set."
+        assert fold is not None, "Fold number is not set."
+
+        self.metrics_dir = os.path.join(self.output_dir, "results")
+        os.makedirs(self.metrics_dir, exist_ok=True)
+
+        metrics_fold_filename = f"metrics_fold_{fold}.json"
+
+        self.logger.info("Computing metrics...")
+
+        metrics = eval_metrics(
+            predictions_folder=self.preds_dir,
+            ground_truth_folder=self.ground_truth_dir,
+            save_path=self.metrics_dir,
+            filename=metrics_fold_filename,
+        )
+
+        self.logger.info(
+            f"FROC scores for lymphocytes: {metrics['aggregates']['lymphocytes']['froc_score_aggr']}"
+        )
+        self.logger.info(
+            f"FROC scores for monocytes: {metrics['aggregates']['monocytes']['froc_score_aggr']}"
+        )
+        self.logger.info(
+            f"FROC scores for inflammatory-cells: {metrics['aggregates']['inflammatory-cells']['froc_score_aggr']}"
+        )
+
+        metrics_file_path = os.path.join(self.metrics_dir, metrics_fold_filename)
+        assert os.path.exists(metrics_file_path), "Metrics file not found!."
+
+        if plot_froc is True:
+            self.logger.info("Plotting FROC curve(s)...")
+            plot_overall_froc(
+                input_path=metrics_file_path,
+                output_path=self.metrics_dir,
+                plot_per_file=plot_froc_single_wsis,
+                filename=f"froc_curves_aggregated_fold_{fold}.png",
+            )
 
     def test(self):
         pass
