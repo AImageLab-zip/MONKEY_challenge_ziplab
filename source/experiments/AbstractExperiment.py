@@ -40,22 +40,6 @@ class AbstractExperiment:
             self.num_workers = int(os.environ.get("SLURM_CPUS_PER_TASK", 2))
 
         # -- DATA CONFIGs -- #
-        self.wsd_config = self.config.get("wholeslidedata", {})["user_config"]
-
-        if self.wsd_config is None:
-            print(
-                "Whole Slide Data configurations not found in the configuration file."
-            )
-            return -1  # TODO: implement better error handling
-
-        # inject configs seed in the wsd_config
-        self.wsd_config["wholeslidedata"]["default"]["seed"] = self.seed
-
-        self.img_backend = self.wsd_config["wholeslidedata"]["default"].get(
-            "image_backend", "openslide"
-        )
-        self.logger.info(f"Image backend: {self.img_backend}")
-
         self.dataset_configs = self.config.get("dataset", {})
         if self.dataset_configs is None:
             print("Dataset configurations not found in the configuration file.")
@@ -66,19 +50,6 @@ class AbstractExperiment:
         self.dataset_name = self.dataset_configs.get("name", "default_dataset")
 
         self.n_folds = self.dataset_configs.get("n_folds", 5)
-
-        # patches and shape configs
-        # extract the patch shape and spacings from the wsd_config
-        self.batch_shape = self.wsd_config["wholeslidedata"]["default"]["batch_shape"]
-        # use the deep copy to avoid changing the original dict
-        self.patch_shape = deepcopy(self.batch_shape.get("shape", (128, 128, 3)))
-        self.spacings = deepcopy((self.batch_shape.get("spacing", 0.5),))
-        self.y_shape = deepcopy(self.batch_shape.get("y_shape", (1000, 6)))
-
-        # TODO: add the overlap and offset to the patch configuration yaml
-        self.overlap = (0, 0)
-        self.offset = (0, 0)
-        self.center = False
 
         # -- MODEL CONFIGs -- #
         self.model_config = self.config.get("model", {})
@@ -99,8 +70,6 @@ class AbstractExperiment:
             return -1
 
         self.batch_size = self.training_config.get("batch_size", 32)
-        # inject batch size in the wsd config
-        self.batch_shape["batch_size"] = self.batch_size
 
         self.learning_rate = self.training_config.get("learning_rate", 0.001)
         self.epochs = self.training_config.get("epochs", 10)
@@ -145,6 +114,42 @@ class AbstractExperiment:
         # set-up the optional model params and gradient watch by wand-db (if enabled)
         # self.model_watch = getattr(self.args, "wandb_model_watch", False)
 
+        # # set up the wsd config dictionary, without wsi and wsa paths
+        # self._set_wsd_config()
+
+    def _set_wsd_config(self):
+        self.wsd_config = deepcopy(self.config.get("wholeslidedata", {})["user_config"])
+
+        if self.wsd_config is None:
+            print(
+                "Whole Slide Data configurations not found in the configuration file."
+            )
+            return -1  # TODO: implement better error handling
+
+        # inject configs seed in the wsd_config
+        self.wsd_config["wholeslidedata"]["default"]["seed"] = self.seed
+
+        self.img_backend = self.wsd_config["wholeslidedata"]["default"].get(
+            "image_backend", "openslide"
+        )
+        self.logger.info(f"Image backend: {self.img_backend}")
+
+        # patches and shape configs
+        # extract the patch shape and spacings from the wsd_config
+        self.batch_shape = self.wsd_config["wholeslidedata"]["default"]["batch_shape"]
+        # use the deep copy to avoid changing the original dict
+        self.patch_shape = deepcopy(self.batch_shape.get("shape", (128, 128, 3)))
+        self.spacings = deepcopy((self.batch_shape.get("spacing", 0.5),))
+        self.y_shape = deepcopy(self.batch_shape.get("y_shape", (1000, 6)))
+
+        # TODO: add the overlap and offset to the patch configuration yaml
+        self.overlap = (0, 0)
+        self.offset = (0, 0)
+        self.center = False
+
+        # inject batch size in the wsd config
+        self.batch_shape["batch_size"] = self.batch_size
+
         # debug print for wsd config dict
         self.logger.debug(
             f"\n{10*'='}\nwsd_config debug: {self.wsd_config}\n{10*'='}\n"
@@ -156,11 +161,15 @@ class AbstractExperiment:
         return self.dataset_df, self.folds_paths_dict
 
     def _load_fold(self, fold_path_dict):
+        # set up the wsd config dictionary, without wsi and wsa paths
+        self._set_wsd_config()
+
         self.fold_yaml_paths_dict = load_yaml(fold_path_dict)
         if self.fold_yaml_paths_dict is None:
             self.logger.error("Error loading fold yaml file.")
             return -1
-        # inject fold splits to the config dict
+
+        # inject fold splits (wsa and wsi paths) to the wsd config dict
         self.wsd_config["wholeslidedata"]["default"]["yaml_source"] = deepcopy(
             self.fold_yaml_paths_dict
         )
@@ -172,7 +181,8 @@ class AbstractExperiment:
         pass
 
     def train(self):
-        self.dataset_df, self.folds_paths_dict = self.prepare_data()
+        if self.dataset_df is None or self.folds_paths_dict is None:
+            self.dataset_df, self.folds_paths_dict = self.prepare_data()
 
         # if fold is specified, train on that fold only
         if self.fold is not None:
