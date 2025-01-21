@@ -25,6 +25,11 @@ inference-docker-debug/example_model/*
 inference-docker-debug/test/*
 challenge_example_code/*
 
+#temp source folder architectures repositories
+
+source/sota_architectures/*
+
+
 #tar gz files
 *.tar.gz
 *.tar
