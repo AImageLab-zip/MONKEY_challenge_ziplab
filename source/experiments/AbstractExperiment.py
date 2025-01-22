@@ -3,7 +3,7 @@ import time
 from copy import deepcopy
 
 from evaluation.custom_evaluate import eval_metrics
-from evaluation.custom_json_to_xml import json_to_xml
+from source.scripts.custom_json_to_xml import json_to_xml
 from evaluation.custom_plot_froc import plot_overall_froc
 from tqdm import tqdm
 from utils.data_preparation import DataPreparator
