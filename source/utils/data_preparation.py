@@ -1,10 +1,14 @@
 import glob
 import os
+from pathlib import Path
 
 import pandas as pd
 import yaml
+from PIL import Image
 from sklearn.model_selection import KFold, StratifiedKFold
 from tqdm import tqdm
+from wholeslidedata.image.wholeslideimage import WholeSlideImage
+from wholeslidedata.iterators import PatchConfiguration, create_patch_iterator
 
 from .config_parser import get_args_and_config
 from .dot2polygon import dot2polygon
@@ -35,6 +39,8 @@ class DataPreparator:
 
         self.dataset_dir = self.dataset_configs.get("path", "../data/monkey-data")
         self.annotation_dir = os.path.join(self.dataset_dir, "annotations", "xml")
+        # self.json_px_dir = os.path.join(self.dataset_dir, "annotations", "json_pixel")
+
         self.annotation_polygon_dirname = self.config.get(
             "annotation_polygon_dir", "annotations_polygon"
         )
@@ -112,7 +118,7 @@ class DataPreparator:
         print("Bounding boxes annotations created successfully.")
         return 0
 
-    def create_dataset_df(self):
+    def create_dataset_df(self, bboxes=True):
         """
         Creates and updates a metadata DataFrame by mapping WSI image files and
         annotation files to corresponding patient IDs.
@@ -133,9 +139,14 @@ class DataPreparator:
         )  # Replace placeholders
 
         # Define directories for annotation and image files
-        wsa_dir = (
-            f"{self.annotation_polygon_dir}" + r"/*_polygon.xml"
-        )  # Annotation files
+        if bboxes:
+            wsa_dir = (
+                f"{self.annotation_polygon_dir}" + r"/*_polygon.xml"
+            )  # Annotation files for bboxes in pixel coordinates
+        else:
+            wsa_dir = (
+                f"{self.annotation_dir}" + r"/*.xml"
+            )  # point annotations in pixel coordinates
         wsi_pas_cpg_dir = os.path.join(
             self.dataset_dir, "images", "pas-cpg"
         )  # PAS_CPG images
@@ -318,9 +329,20 @@ class DataPreparator:
         self.create_bboxes_annots()
 
         # 2. Create and update the dataset dataframe
-        self.create_dataset_df()
+        self.create_dataset_df(
+            bboxes=True
+        )  # create the df using bounding boxes annotations
 
         # 3. Split the data into n folds and save to n .yml files in the specified directory
+        dataset_df, folds_paths_dict = self.split_and_save_kfold()
+
+        return dataset_df, folds_paths_dict
+
+    def prepare_data_points_annotations(self):
+        # 1. Create the dataset dataframe using points annotations
+        self.create_dataset_df(bboxes=False)
+
+        # 2. Split the data into n folds and save to n .yml files in the specified directory
         dataset_df, folds_paths_dict = self.split_and_save_kfold()
 
         return dataset_df, folds_paths_dict

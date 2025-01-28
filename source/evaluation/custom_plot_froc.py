@@ -2,8 +2,6 @@
 FROC curve plotting function that can be used with metrics.json file that is downloaded from Grand-challenge platform.
 Adapted form https://github.com/computationalpathologygroup/evaluation-tools/blob/main/src/cpg_evaluation_tools/plotting/froc.py
 """
-
-import argparse
 import json
 import os.path
 
