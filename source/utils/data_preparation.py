@@ -372,39 +372,11 @@ class DataPreparator:
     ):
         """
         Creates a CellViT-compatible dataset from the slides in `self.dataset_df`,
-        assuming each Slide ID is unique in one row. The patch configuration is
-        instantiated once, and we reuse it for all slides.
-
-        Folder layout (under output_dir):
-            ├── splits/
-            │   ├── fold_0/
-            │   │   ├── train.csv
-            │   │   └── val.csv
-            │   ├── fold_1/
-            │   │   ├── train.csv
-            │   │   └── val.csv
-            │   ...
-            ├── train/
-            │   ├── images/
-            │   │   ├── <slideID>_0.png
-            │   │   ├── <slideID>_1.png
-            │   └── labels/
-            │       ├── <slideID>_0.csv
-            │       ├── <slideID>_1.csv
-            ├── test/
-            │   ├── images/   (empty)
-            │   └── labels/   (empty)
-            └── label_map.yaml    (maps label_id -> class_name)
-
-        `train.csv` and `val.csv` for each fold contain one column with
-        the patch basenames (no .png extension).
-
-        Args:
-            output_dir (str): Root directory for the CellViT dataset structure.
-            group_to_label (dict): label dictionary.Default: {"monocytes": 0, "lymphocytes": 1}.
-            ignore_groups (set): Key only dictionary with labels to ignore in the xml annotatiosn. Default: {"ROI"} to skip ROI annotations.
-            cpus (int): Number of CPUs for patch generation. Default: 4.
+        assuming each Slide ID is unique in one row. Writes out patches as .png images
+        and writes patch basenames to train/val CSV files per fold on the fly to
+        avoid large in-memory structures.
         """
+
         # 0) Prepare the dataset_df with points annotations
         self.prepare_data_points_annotations()
 
@@ -416,16 +388,13 @@ class DataPreparator:
 
         # 2) Create folder structure
         os.makedirs(output_dir, exist_ok=True)
-
         splits_dir = os.path.join(output_dir, "splits")
         os.makedirs(splits_dir, exist_ok=True)
 
         train_dir = os.path.join(output_dir, "train")
         os.makedirs(train_dir, exist_ok=True)
-
         train_images_dir = os.path.join(train_dir, "images")
         os.makedirs(train_images_dir, exist_ok=True)
-
         train_labels_dir = os.path.join(train_dir, "labels")
         os.makedirs(train_labels_dir, exist_ok=True)
 
@@ -441,12 +410,24 @@ class DataPreparator:
             fold_dir = os.path.join(splits_dir, f"fold_{f}")
             os.makedirs(fold_dir, exist_ok=True)
 
-        # 4) Set up a dictionary to keep track of patch basenames for each fold
-        #    patch_lists[fold_id]["train"] => [patch_1, patch_2, ...]
-        #    patch_lists[fold_id]["val"]   => [...]
-        patch_lists = defaultdict(lambda: {"train": [], "val": []})
+        # 4) Open CSV filehandles for each fold's train.csv and val.csv once
+        fold_csv_files = {}
+        for f in unique_folds:
+            fold_dir = os.path.join(splits_dir, f"fold_{f}")
+            train_csv_path = os.path.join(fold_dir, "train.csv")
+            val_csv_path = os.path.join(fold_dir, "val.csv")
 
-        # 5) Instantiate PatchConfiguration once
+            f_train = open(train_csv_path, mode="w", newline="")
+            f_val = open(val_csv_path, mode="w", newline="")
+
+            # We'll store the CSV writers in a dict for easy access
+            fold_csv_files[f] = {
+                "train_writer": csv.writer(f_train),
+                "val_writer": csv.writer(f_val),
+                "files": (f_train, f_val),  # to close later
+            }
+
+        # 5) Create a single PatchConfiguration
         patch_config = PatchConfiguration(
             patch_shape=patch_shape,
             spacings=spacings,
@@ -455,20 +436,18 @@ class DataPreparator:
             center=center,
         )
         self.logger.info(
-            f"Created PatchConfiguration with the params: patch shape: {patch_shape}, spacings: {spacings}, overlap: {overlap}, offset: {offset}, center: {center}"
+            f"Created PatchConfiguration: patch_shape={patch_shape}, "
+            f"spacings={spacings}, overlap={overlap}, offset={offset}, center={center}"
         )
 
         # 6) Convert dataset_df to list of dict rows for iteration
         rows = self.dataset_df.to_dict("records")
-
-        # We'll show progress with tqdm
         pbar = tqdm(rows, desc="Creating CellViT Dataset")
 
         for row in pbar:
             slide_id = row.get("Slide ID", None)
-            fold_id = int(
-                row["fold_id"]
-            )  # This slide is 'val' in fold=fold_id, 'train' in others
+            # The fold_id for this slide = val fold. It's "train" in all other folds
+            val_fold_id = int(row["fold_id"])
 
             wsi_path = row.get(self.wsi_col)
             xml_path = row.get(self.wsa_col)
@@ -490,9 +469,7 @@ class DataPreparator:
 
             pbar.set_postfix_str(f"Slide={slide_id}, Annotations={len(annotations)}")
 
-            # 6.2 Create the patch iterator using the pre-made patch_config.
-            #     We'll pass it 'file_path' and 'mask_path' dynamically.
-            #     The rest is in patch_config.
+            # 6.2 Create the patch iterator
             patch_iterator = create_patch_iterator(
                 image_path=wsi_path,
                 mask_path=mask_path
@@ -503,23 +480,12 @@ class DataPreparator:
                 backend="asap",
             )
 
-            # We'll store all generated patch basenames for this slide
-            patch_basenames_for_slide = []
-
-            # 6.3 Go through each patch
+            # For each patch...
             for idx_patch, (patch_data, mask_data, info) in enumerate(patch_iterator):
                 patch_np = patch_data.squeeze().astype(np.uint8)  # (H, W, 3)
                 H, W, _ = info["tile_shape"]
                 patch_x = info["x"]
                 patch_y = info["y"]
-
-                # patch_spacing = info["spacing"][0]
-
-                # scale_factor = spacings[0] / patch_spacing
-
-                # self.logger.debug(
-                #     f"Patch {idx_patch} - Shape: {patch_np.shape}, Spacing: {patch_spacing}, Scale Factor: {scale_factor}"
-                # )
 
                 # Build patch basename: <slideID>_<patchIndex>
                 patch_basename = f"{slide_id}_{idx_patch}"
@@ -531,12 +497,13 @@ class DataPreparator:
                 # Convert global coords to local patch coords
                 patch_anns = []
                 for x_g, y_g, label_id in annotations:
-                    x_local = x_g - patch_x  # * scale_factor
-                    y_local = y_g - patch_y  # * scale_factor
-
-                    # Check if it’s inside this patch
+                    x_local = x_g - patch_x
+                    y_local = y_g - patch_y
                     if 0 <= x_local < W and 0 <= y_local < H:
-                        patch_anns.append((x_local, y_local, label_id))
+                        # save the annotation in the patch pixel coordinates as rounded integers
+                        patch_anns.append(
+                            (int(round(x_local)), int(round(y_local)), label_id)
+                        )
 
                 # Save CSV for annotation
                 csv_path = os.path.join(train_labels_dir, patch_basename + ".csv")
@@ -546,30 +513,24 @@ class DataPreparator:
                     for xl, yl, lid in patch_anns:
                         writer.writerow([xl, yl, lid])
 
-                patch_basenames_for_slide.append(patch_basename)
+                # Write the patch basename line to each fold's CSV
+                # => If fold == val_fold_id => it belongs to VAL set
+                # => Else => it belongs to TRAIN set
+                for f in unique_folds:
+                    if f == val_fold_id:
+                        fold_csv_files[f]["val_writer"].writerow([patch_basename])
+                    else:
+                        fold_csv_files[f]["train_writer"].writerow([patch_basename])
 
-            # 6.4 For each fold: if fold==fold_id => val, else => train
-            for f in unique_folds:
-                if f == fold_id:
-                    patch_lists[f]["val"].extend(patch_basenames_for_slide)
-                else:
-                    patch_lists[f]["train"].extend(patch_basenames_for_slide)
+            # Explicitly delete or clear patch_iterator if needed
+            # to help the garbage collector free memory
+            del patch_iterator
 
-        # 7) Write out train.csv & val.csv for each fold
+        # 7) Close all fold CSV files
         for f in unique_folds:
-            fold_dir = os.path.join(splits_dir, f"fold_{f}")
-            train_csv_path = os.path.join(fold_dir, "train.csv")
-            val_csv_path = os.path.join(fold_dir, "val.csv")
-
-            with open(train_csv_path, mode="w", newline="") as tf:
-                writer = csv.writer(tf)
-                for patch_base in patch_lists[f]["train"]:
-                    writer.writerow([patch_base])
-
-            with open(val_csv_path, mode="w", newline="") as vf:
-                writer = csv.writer(vf)
-                for patch_base in patch_lists[f]["val"]:
-                    writer.writerow([patch_base])
+            f_train, f_val = fold_csv_files[f]["files"]
+            f_train.close()
+            f_val.close()
 
         # 8) Save label_map.yaml in the root output directory
         if group_to_label:
@@ -580,7 +541,6 @@ class DataPreparator:
 
         label_map_path = os.path.join(output_dir, "label_map.yaml")
         with open(label_map_path, "w") as f:
-            # We'll write them in ascending order of label_id
             for label_id in sorted(label_map_inverted.keys()):
                 class_name = label_map_inverted[label_id]
                 f.write(f'{label_id}: "{class_name}"\n')

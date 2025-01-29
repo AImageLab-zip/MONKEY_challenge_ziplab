@@ -11,13 +11,14 @@
 #SBATCH --time=24:00:00  # Set a maximum time limit (HH:MM:SS)
 
 #SBATCH --cpus-per-task=4 # Request number of CPU cores
-#SBATCH --mem-per-cpu=3G  # memory per CPU core
+#SBATCH --mem-per-cpu=4G  # memory per CPU core
 
 ### total memory will be: cpus-per-task * mem-per-cpu
 
 #SBATCH --ntasks=1 # number of tasks per node
 
-#SBATCH --gres=gpu:1 ## number of gpus 
+### no gpu for now!!!
+###SBATCH --gres=gpu:1 ## number of gpus 
 
 ### if you need a specific gpu type, you can use the constraint flag between OR "|" symbols. Example:
 
@@ -71,7 +72,9 @@ echo "== Running script =="
 cd /work/grana_urologia/MONKEY_challenge/source
 
 # Run your Python script
-python main.py --config=/work/grana_urologia/MONKEY_challenge/source/configs/baseline/detectron2_baseline.yml --fold=4
+#python main.py --config=/work/grana_urologia/MONKEY_challenge/source/configs/baseline/detectron2_baseline.yml --fold=4
+
+python main.py --config=/work/grana_urologia/MONKEY_challenge/source/configs/baseline/cellvit_dataset_creation.yml
 
 echo "== Finished running script! =="
 

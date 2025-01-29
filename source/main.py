@@ -18,7 +18,7 @@ if __name__ == "__main__":
     # test_torch()
     args, config = get_args_and_config()
 
-    output_dir = "../data/monkey_cellvit"
+    output_dir = "/work/grana_urologia/MONKEY_challenge/data/monkey_cellvit"
     group_to_label = {"monocytes": 0, "lymphocytes": 1}
 
     data_prep = DataPreparator(config)
