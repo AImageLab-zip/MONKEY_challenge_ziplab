@@ -361,7 +361,7 @@ class DataPreparator:
     def create_cellvit_dataset_singlerow(
         self,
         output_dir: str,
-        group_to_label={"monocytes": 0, "lymphocytes": 0},
+        group_to_label={"monocytes": 0, "lymphocytes": 1},
         ignore_groups={"ROI"},
         patch_shape=(1024, 1024, 3),
         spacings=(0.24199951445730394,),
@@ -401,7 +401,7 @@ class DataPreparator:
 
         Args:
             output_dir (str): Root directory for the CellViT dataset structure.
-            group_to_label (dict): label dictionary.Default: {"monocytes": 0, "lymphocytes": 0}.
+            group_to_label (dict): label dictionary.Default: {"monocytes": 0, "lymphocytes": 1}.
             ignore_groups (set): Key only dictionary with labels to ignore in the xml annotatiosn. Default: {"ROI"} to skip ROI annotations.
             cpus (int): Number of CPUs for patch generation. Default: 4.
         """

@@ -1,4 +1,4 @@
-from experiments.BaselineDetectronExperiment import BaselineDetectronExperiment
+# from experiments.BaselineDetectronExperiment import BaselineDetectronExperiment
 from utils.config_parser import get_args_and_config
 from utils.data_preparation import DataPreparator
 
@@ -19,12 +19,12 @@ if __name__ == "__main__":
     args, config = get_args_and_config()
 
     output_dir = "../data/monkey_cellvit"
-    group_to_label = {"monocytes": 0, "lymphocytes": 0}
+    group_to_label = {"monocytes": 0, "lymphocytes": 1}
 
     data_prep = DataPreparator(config)
     data_prep.create_cellvit_dataset_singlerow(
         output_dir="../data/monkey_cellvit",
-        group_to_label={"monocytes": 0, "lymphocytes": 0},
+        group_to_label={"monocytes": 0, "lymphocytes": 1},
         ignore_groups={"ROI"},
         patch_shape=(256, 256, 3),
         spacings=(0.24199951445730394,),
