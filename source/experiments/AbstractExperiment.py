@@ -3,7 +3,7 @@ import time
 from copy import deepcopy
 
 from evaluation.custom_evaluate import eval_metrics
-from evaluation.custom_json_to_xml import json_to_xml
+from source.scripts.custom_json_to_xml import json_to_xml
 from evaluation.custom_plot_froc import plot_overall_froc
 from tqdm import tqdm
 from utils.data_preparation import DataPreparator
@@ -397,17 +397,6 @@ class AbstractExperiment:
                     else:
                         self.logger.warning("Unknown label")
                         continue
-
-        # #TODO: bugged code, they had the same problem and even downgrading shapely didn't work :(
-        # # saving xml file
-        # annotations_wsd = to_wsd(annotations_immune_cells, label="inflammatory-cell")
-        # xml_filename = 'points_results.xml'
-        # output_path_xml = os.path.join(output_path,xml_filename)
-        # write_point_set(
-        #     annotations_wsd,
-        #     output_path_xml,
-        #     label_color="blue",
-        # )
 
         return output_dict_immune_cells, output_dict_monocytes, output_dict_lymphocytes
 
