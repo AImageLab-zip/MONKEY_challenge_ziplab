@@ -52,13 +52,15 @@ def compute_offline_metrics(
 
 
 if __name__ == "__main__":
-    preds_dir = "/work/grana_urologia/MONKEY_challenge/outputs/detectron2_pretrained_True_e5000_b10_lr0.001/results/fold_4"
+    preds_dir = "/work/grana_urologia/MONKEY_challenge/source/sota_architectures/transformed_preds"
     ground_truth_dir = (
         "/work/grana_urologia/MONKEY_challenge/data/monkey-data/annotations/json_mm"
     )
-    save_dir = "/work/grana_urologia/MONKEY_challenge/outputs/detectron2_pretrained_True_e5000_b10_lr0.001/results"
-    metrics_filename = "metrics_fold_4.json"
-    froc_plot_filename = "froc_curves_aggregated_fold_4.png"
+    save_dir = (
+        "/work/grana_urologia/MONKEY_challenge/source/sota_architectures/test_data"
+    )
+    metrics_filename = "metrics.json"
+    froc_plot_filename = "froc_curve.png"
 
     compute_offline_metrics(
         preds_dir=preds_dir,
@@ -66,6 +68,6 @@ if __name__ == "__main__":
         save_dir=save_dir,
         metrics_filename=metrics_filename,
         plot_froc=True,
-        plot_froc_single_wsis=False,
+        plot_froc_single_wsis=True,
         froc_plot_filename=froc_plot_filename,
     )

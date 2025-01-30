@@ -1,4 +1,6 @@
 # from experiments.BaselineDetectronExperiment import BaselineDetectronExperiment
+import os
+
 from utils.config_parser import get_args_and_config
 from utils.data_preparation import DataPreparator
 
@@ -31,7 +33,7 @@ if __name__ == "__main__":
         overlap=(0, 0),
         offset=(0, 0),
         center=False,
-        cpus=4,
+        cpus=int(os.environ.get("SLURM_CPUS_PER_TASK", 4)),
     )
     # experiment = BaselineDetectronExperiment(args, config)
     # experiment.train()

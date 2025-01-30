@@ -1,7 +1,6 @@
 import csv
 import glob
 import os
-from collections import defaultdict
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -358,6 +357,15 @@ class DataPreparator:
 
         return dataset_df, folds_paths_dict
 
+    def _clamp(x, y, width, height, shift_x, shift_y):
+        """
+        Ensures x, y remain inside valid image bounds.
+        Applies small shift (if enabled) for better alignment.
+        """
+        x = max(0, min(x + shift_x, width - 1))  # Shift X and clamp
+        y = max(0, min(y + shift_y, height - 1))  # Shift Y and clamp
+        return x, y
+    
     def create_cellvit_dataset_singlerow(
         self,
         output_dir: str,
@@ -509,7 +517,7 @@ class DataPreparator:
                 csv_path = os.path.join(train_labels_dir, patch_basename + ".csv")
                 with open(csv_path, mode="w", newline="") as cf:
                     writer = csv.writer(cf)
-                    writer.writerow(["x", "y", "label_id"])
+                    # writer.writerow(["x", "y", "label_id"]) #NOTE: removed for the dataset format required for annotations
                     for xl, yl, lid in patch_anns:
                         writer.writerow([xl, yl, lid])
 
