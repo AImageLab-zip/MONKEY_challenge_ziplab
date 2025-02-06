@@ -83,7 +83,7 @@ def filter_cells_inside_roi(predicted_cells, rois):
 
 # Function to assign labels and remove duplicate monocyte/lymphocyte points
 def assign_labels_deduplicated(
-    xml_annotations, predicted_cells, threshold_microns=10, base_mpp=0.25
+    xml_annotations, predicted_cells, threshold_microns=7.5, base_mpp=0.25
 ):
     threshold_pixels = threshold_microns / base_mpp
     xml_coords = np.array([(x, y) for x, y, _ in xml_annotations])
@@ -123,7 +123,9 @@ def ensure_annotation_group_exists(root, group_name, color):
 
 
 # Function to process the XML with JSON predictions
-def preprocess_xml_with_json(xml_path, json_path, output_path):
+def preprocess_xml_with_json(
+    xml_path, json_path, output_path, threshold_microns=7.5, base_mpp=0.25
+):
     xml_annotations = parse_asap_dot_annotations(xml_path)
     predicted_cells = parse_predicted_cells(json_path)
     rois = parse_roi_regions(xml_path)
@@ -132,7 +134,7 @@ def preprocess_xml_with_json(xml_path, json_path, output_path):
         predicted_cells, rois
     )  # Keep only points inside ROI
     new_annotations = assign_labels_deduplicated(
-        xml_annotations, filtered_predicted_cells
+        xml_annotations, filtered_predicted_cells, threshold_microns, base_mpp
     )  # Assign labels and deduplicate
 
     save_final_asap_xml(xml_path, new_annotations, output_path)
@@ -175,7 +177,7 @@ def save_final_asap_xml(xml_path, new_annotations, output_path):
         )
         color = color_map[group_name]
 
-        annotation_el = ET.SubElement(
+        annota'tion_el = ET.SubElement(
             annotations_root,
             "Annotation",
             {
@@ -210,4 +212,10 @@ json_input = "/work/grana_urologia/MONKEY_challenge/data/cell_positions_preds/A_
 output_xml = "/work/grana_urologia/MONKEY_challenge/data/cell_positions_preds/A_P000001_3class.xml"
 
 # Run the processing
-preprocess_xml_with_json(xml_input, json_input, output_xml)
+preprocess_xml_with_json(
+    xml_input,
+    json_input,
+    output_xml,
+    threshold_microns=5,
+    base_mpp=0.24199951445730394,
+)
