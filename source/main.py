@@ -21,12 +21,12 @@ if __name__ == "__main__":
     args, config = get_args_and_config()
 
     output_dir = "/work/grana_urologia/MONKEY_challenge/data/monkey_cellvit"
-    group_to_label = {"monocytes": 0, "lymphocytes": 1}
+    group_to_label = {"monocytes": 0, "lymphocytes": 1, "other": 2}
 
     data_prep = DataPreparator(config)
     data_prep.create_cellvit_dataset_singlerow(
         output_dir="../data/monkey_cellvit",
-        group_to_label={"monocytes": 0, "lymphocytes": 1},
+        group_to_label=group_to_label,
         ignore_groups={"ROI"},
         patch_shape=(256, 256, 3),
         spacings=(0.24199951445730394,),
