@@ -177,7 +177,7 @@ def save_final_asap_xml(xml_path, new_annotations, output_path):
         )
         color = color_map[group_name]
 
-        annota'tion_el = ET.SubElement(
+        annotation_el = ET.SubElement(
             annotations_root,
             "Annotation",
             {

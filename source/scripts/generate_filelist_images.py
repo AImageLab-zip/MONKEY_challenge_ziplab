@@ -1,6 +1,6 @@
-import os
-import csv
 import argparse
+import csv
+import os
 
 
 def generate_csv(folder_path, output_csv="output.csv"):
@@ -11,7 +11,7 @@ def generate_csv(folder_path, output_csv="output.csv"):
     for root, _, files in os.walk(folder_path):
         for file in files:
             file_path = os.path.abspath(os.path.join(root, file))
-            file_entries.append([file_path, 0.5, 40])
+            file_entries.append([file_path, 0.25, 40])
 
     # Write to CSV
     with open(output_csv, mode="w", newline="") as csv_file:
