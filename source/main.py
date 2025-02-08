@@ -20,11 +20,13 @@ if __name__ == "__main__":
     # test_torch()
     args, config = get_args_and_config()
 
-    output_dir = "/work/grana_urologia/MONKEY_challenge/data/monkey_cellvit_3_classes"
+    output_dir = (
+        "/work/grana_urologia/MONKEY_challenge/data/monkey_cellvit_3_cls_parallel"
+    )
     group_to_label = {"monocytes": 0, "lymphocytes": 1, "other": 2}
 
     data_prep = DataPreparator(config)
-    data_prep.create_cellvit_dataset_singlerow(
+    data_prep.create_cellvit_dataset_singlerow_parallel(
         output_dir=output_dir,
         group_to_label=group_to_label,
         ignore_groups={"ROI"},
@@ -33,7 +35,7 @@ if __name__ == "__main__":
         overlap=(0, 0),
         offset=(0, 0),
         center=False,
-        cpus=int(os.environ.get("SLURM_CPUS_PER_TASK", 4)),
+        n_cpus_global=int(os.environ.get("SLURM_CPUS_PER_TASK", 16)),
     )
     # experiment = BaselineDetectronExperiment(args, config)
     # experiment.train()

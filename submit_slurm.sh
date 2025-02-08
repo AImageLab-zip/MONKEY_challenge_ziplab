@@ -10,8 +10,8 @@
 
 #SBATCH --time=24:00:00  # Set a maximum time limit (HH:MM:SS)
 
-#SBATCH --cpus-per-task=4 # Request number of CPU cores
-#SBATCH --mem-per-cpu=4G  # memory per CPU core
+#SBATCH --cpus-per-task=16 # Request number of CPU cores
+#SBATCH --mem-per-cpu=3G  # memory per CPU core
 
 ### total memory will be: cpus-per-task * mem-per-cpu
 
