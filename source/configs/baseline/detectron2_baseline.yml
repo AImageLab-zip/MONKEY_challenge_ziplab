@@ -1,0 +1,120 @@
+project:
+  name: "monkey_challenge_ziplab"
+  log_dir: "../logs/scripts"
+  output_dir: "../outputs"
+  timestamp: "auto"
+  num_workers: "auto"
+  seed: 42
+  continue_training: False
+  file_log: False
+  wandb_model_watch: True
+  img_save_dir_path: "./imgs"
+  model_save_dir_path: null
+
+wholeslidedata:
+  user_config: {
+      "wholeslidedata": {
+          "default": {
+              "yaml_source": "", #NOTE: refer to the dataset yaml_wsi_wsa_dir path!!!!
+              "seed": "",
+              "image_backend": "asap",  # was "asap"
+              "labels": {"ROI": 0, "lymphocytes": 1, "monocytes": 2},
+              "batch_shape": {
+                  "batch_size":, #also change the training batch size config with the same number
+                  "spacing": 0.5,
+                  "shape": [128, 128, 3],
+                  "y_shape": [1000, 6],
+              },
+              "annotation_parser": {
+                  "sample_label_names": ["roi"],
+              },
+              "point_sampler_name": "RandomPointSampler",
+              "point_sampler": {
+                  "buffer": {"spacing": "${batch_shape.spacing}", "value": -64},
+              },
+              # "sample_callbacks": [
+              #   # NOTE we can use the sample callbacks to apply transformations to the patches!
+              #   {
+              #       "*object": "wholeslidedata.interoperability.albumentations.callbacks.AlbumentationsDetectionSampleCallback",
+              #       "augmentations": [
+              #           {"RandomRotate90": {}},
+              #           # {"Flip": {"p": 0.5}},
+              #           {"D4": {}},
+              #           # { #NOTE: caused crash because bbox number would change given the crop!
+              #           #     "ShiftScaleRotate": {
+              #           #         "shift_limit": 0.05,
+              #           #         "scale_limit": 0.05,
+              #           #         "rotate_limit": 15,
+              #           #         "p": 0.5,
+              #           #     }
+              #           # },
+              #           # NOTE: we can use BBoxSafeRandomCrop to ensure that the bbox is not cropped out of the image!
+              #           {"Blur": {"blur_limit": 3, "p": 0.3}},
+              #           {
+              #               "HueSaturationValue": {
+              #                   "hue_shift_limit": 20,
+              #                   "sat_shift_limit": 30,
+              #                   "val_shift_limit": 20,
+              #                   "p": 0.3,
+              #               }
+              #           },
+              #       ],
+              #   },
+              # ],
+              "patch_label_sampler_name": "DetectionPatchLabelSampler",
+              "patch_label_sampler": {
+                  "max_number_objects": 1000,
+                  "detection_labels": ["lymphocytes", "monocytes"],
+              },
+          }
+      }
+  }
+
+dataset:
+  name: "monkey_dataset_v0"
+  path: "../data/monkey-data"
+  annotation_polygon_dir: "annotations_polygon" #NOTE: change also the user_config yaml_source value above!!!
+  yaml_wsi_wsa_dir: "./configs/splits/" #where to save the yaml splits files
+  num_classes: 2 # lymphocytes + monocytes
+  n_folds: 5 #number of folds for the k-folds splits
+  balance_by: None #balance folds using a column name from the data dataframe
+  wsi_col: "WSI PAS_CPG Path" # column to use in the dataframe
+  was_col: "Annotation Path" # column 
+  lymphocyte_half_box_size: 4.5  # the size of half of the bbox around the lymphocyte dot in um
+  # NOTE: reduced this to 5.0 as the eval script (it was 11.0)
+  monocytes_half_box_size: 5.0  # the size of half of the bbox around the monocytes dot in um
+  min_spacing: 0.25  # NOTE: in the eval code they use 0.24199951445730394 # spacing is the zoom level of the image, in micro-meters per pixel (was rounded to 0.25)
+  num_bins_total_cells_count: 5 # bins to use to make a total cell count ordinal feature for dataset balanced splits
+  # valid_ratio: 0.15
+  # test_ratio: 0.2
+  # #split_by_wsi: False #no splitting by wsi, will have more balanced data but produce a bit of data leakage
+  #augs: "none"
+  # normalize: False #no normalization to test the effect of it later
+
+model:
+  name: "detectron2" #baseline model used in the example code of the challenge
+  config_url: "COCO-Detection/faster_rcnn_X_101_32x8d_FPN_3x.yaml"
+  pretrained: True #no pretraining, testing what happens with non initialized weights
+  conf_threshold: 0.1 #detection confidence level required to have a bbox detection
+  nms_threshold: 0.3 #non-maxima suppression threshold
+
+  #freeze_all_layers: False #no layer freezing, we need to train every layer
+  #amount_frozen_layers: 0
+
+optimizer:
+  #name: "Adam" #trying Adam
+  #weighted_loss: False #testing what happens if no wl with huge class imbalance
+
+training:
+  learning_rate: 0.001
+  epochs: 5000
+  batch_size: 10
+  continue_training: True
+  # weighted_classes: False #no batch balancing for now
+  # label_threshold: 0.5
+  # evaluate_every: 1
+  # binary_classes: True #simplest case (tumor vs non-tumor)
+
+
+other:
+  # for future use

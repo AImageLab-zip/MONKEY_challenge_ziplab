@@ -1,0 +1,28 @@
+{
+    "name": "Monkey_Challenge_devcontainer",
+    "build": {
+        "dockerfile": "Dockerfile",
+        "context": ".."
+    },
+    "runArgs": [
+        "--gpus=all",
+        "--shm-size=4g"
+    ],
+    "workspaceFolder": "/workspace",
+    "workspaceMount": "source=${localWorkspaceFolder},target=/workspace,type=bind",
+    "mounts": [
+        "source=${localEnv:HOME}/Datasets/monkey_dataset,target=/workspace/data,type=bind,consistency=cached"
+    ], //add the path from your home to the dataset directory here!
+    "customizations": {
+        "vscode": {
+            "extensions": [
+                "ms-python.python",
+                "ms-toolsai.jupyter",
+                "charliermarsh.ruff",
+                "mhutchie.git-graph"
+            ]
+        }
+    },
+    "remoteUser": "vscode",
+    "postCreateCommand": "/workspace/venv/bin/pip install --no-cache-dir -r /workspace/requirements.txt"
+}

@@ -1,0 +1,48 @@
+logging:
+  mode: online
+  project: cellvit++
+  notes: cellvit++
+  log_comment: cellvit++ sam-h finetuning
+  wandb_dir: /work/grana_urologia/MONKEY_challenge/source/sota_architectures/CellViT-plus-plus/logs_finetuning
+  log_dir: /work/grana_urologia/MONKEY_challenge/source/sota_architectures/CellViT-plus-plus/logs_finetuning/2025-02-08T145641_cellvit++
+    sam-h finetuning
+  level: Info
+  run_id: jvrr8r7n
+  wandb_file: jvrr8r7n
+random_seed: 42
+gpu: 0
+data:
+  dataset: DetectionDataset
+  dataset_path: /work/grana_urologia/MONKEY_challenge/data/monkey_cellvit_3_cls_parallel
+  train_filelist: /work/grana_urologia/MONKEY_challenge/data/monkey_cellvit_3_cls_parallel/splits/fold_0/train.csv
+  val_filelist: /work/grana_urologia/MONKEY_challenge/data/monkey_cellvit_3_cls_parallel/splits/fold_0/val.csv
+  normalize_stains_train: false
+  normalize_stains_val: false
+  num_classes: 3
+  label_map:
+    '0': monocytes
+    '1': lymphocytes
+    '2': other
+cellvit_path: /work/grana_urologia/MONKEY_challenge/source/sota_architectures/CellViT-plus-plus/checkpoints/SAM/CellViT-SAM-H-x40-AMP.pth
+model:
+  hidden_dim: 128
+training:
+  cache_cell_dataset: true
+  batch_size: 64
+  epochs: 50
+  drop_rate: 0.1
+  optimizer: AdamW
+  optimizer_hyperparameter:
+    betas:
+    - 0.85
+    - 0.9
+    lr: 0.004619520884674031
+    weight_decay: 1.3974982424527856e-05
+  early_stopping_patience: 20
+  mixed_precision: true
+  eval_every: 1
+  scheduler:
+    scheduler_type: exponential
+run_sweep: false
+agent: null
+just_load_model: false
