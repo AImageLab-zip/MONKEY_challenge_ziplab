@@ -65,8 +65,284 @@ from cellvit.training.utils.metrics import (
 )
 from cellvit.training.utils.tools import pair_coordinates
 
-# ID -> name map, as you specified
+# ID -> name map
 CLASS_MAP = {0: "monocytes", 1: "lymphocytes", 2: "other"}
+
+
+def px_to_mm(px: float, spacing: float = 0.25) -> float:
+    """
+    Convert pixel coordinates to millimeters, given a micrometers-per-pixel spacing.
+    E.g. if spacing=0.25 (µm/px), then 1 px = 0.25 µm = 0.00025 mm.
+    """
+    return px * spacing / 1000.0
+
+
+def parse_patch_basename(patch_basename: str) -> Tuple[str, float, float]:
+    """
+    Parse a patch basename that contains x and y offsets.
+    For example, if patch_basename = "A_P000001_PAS_CPG_x9984_y87808_105",
+    it extracts:
+      - slide_id: "A_P000001_PAS_CPG" (all parts before the first part starting with 'x')
+      - patch_x: 9984.0
+      - patch_y: 87808.0
+    """
+    parts = patch_basename.split("_")
+    slide_parts = []
+    patch_x = None
+    patch_y = None
+    for part in parts:
+        if part.startswith("x"):
+            try:
+                patch_x = float(part.lstrip("x"))
+            except ValueError:
+                raise ValueError(f"Error parsing x coordinate in: {patch_basename}")
+        elif part.startswith("y"):
+            try:
+                patch_y = float(part.lstrip("y"))
+            except ValueError:
+                raise ValueError(f"Error parsing y coordinate in: {patch_basename}")
+        else:
+            # Append parts until we encounter a part starting with "x"
+            if patch_x is None:
+                slide_parts.append(part)
+    slide_id = "_".join(slide_parts)
+    if patch_x is None or patch_y is None:
+        raise ValueError(f"Could not parse x,y from patch basename: {patch_basename}")
+    return slide_id, patch_x, patch_y
+
+
+def create_test_dataset(
+    wsi_path: str,
+    mask_path: str,
+    output_dir: str,
+    patch_shape: tuple = (1024, 1024, 3),
+    spacings: tuple = (0.25,),
+    overlap: tuple = (0, 0),
+    offset: tuple = (0, 0),
+    center: bool = False,
+    cpus: int = 4,
+) -> Path:
+    """
+    Create a CellViT-compatible test dataset from a single WSI.
+    Patches are saved under output_dir/test/images and empty CSV files under output_dir/test/labels.
+    Each patch filename embeds the slide id, global x and y coordinates and a unique patch index.
+
+    Args:
+        wsi_path (str): Path to the WSI image.
+        mask_path (str): Path to the WSI mask (optional; if not present, pass an empty string).
+        output_dir (str): Root directory for the test dataset.
+        patch_shape (tuple): Shape of each patch (H, W, C).
+        spacings (tuple): Spacing value(s) for patch extraction.
+        overlap (tuple): Overlap in pixels along x and y.
+        offset (tuple): Offset in pixels.
+        center (bool): Whether to center the patches.
+        cpus (int): Number of CPU cores to use.
+
+    Returns:
+        Path: Path to the test dataset folder.
+    """
+    output_dir = Path(output_dir)
+    train_dir = output_dir / "train"
+    images_train_dir = train_dir / "images"
+    labels_train_dir = train_dir / "labels"
+    os.makedirs(images_train_dir, exist_ok=True)
+    os.makedirs(labels_train_dir, exist_ok=True)
+
+    splits_dir = output_dir / "splits"
+    os.makedirs(splits_dir, exist_ok=True)
+
+    test_dir = output_dir / "test"
+    images_dir = test_dir / "images"
+    labels_dir = test_dir / "labels"
+    os.makedirs(images_dir, exist_ok=True)
+    os.makedirs(labels_dir, exist_ok=True)
+
+    # Create the patch configuration
+    patch_config = PatchConfiguration(
+        patch_shape=patch_shape,
+        spacings=spacings,
+        overlap=overlap,
+        offset=offset,
+        center=center,
+    )
+
+    # Create the patch iterator.
+    patch_iterator = create_patch_iterator(
+        image_path=wsi_path,
+        mask_path=mask_path if mask_path and os.path.isfile(mask_path) else None,
+        patch_configuration=patch_config,
+        cpus=cpus,
+        backend="asap",
+    )
+
+    slide_id = Path(
+        wsi_path
+    ).stem  # Use the WSI filename (without extension) as slide id.
+    pbar = tqdm.tqdm(patch_iterator, desc="Creating test patches")
+    idx_patch = 0
+    for patch_data, mask_data, info in pbar:
+        # Get the patch image as a numpy array.
+        patch_np = patch_data.squeeze().astype(np.uint8)  # shape (H, W, 3)
+        H, W, _ = info["tile_shape"]
+        # Global coordinates for this patch (assumed provided in info).
+        patch_x = info.get("x", 0)
+        patch_y = info.get("y", 0)
+
+        # Build a patch basename that includes the slide id, patch_x, patch_y, and a unique index.
+        patch_basename = f"{slide_id}_x{patch_x}_y{patch_y}_{idx_patch}"
+
+        # Save the patch image.
+        img_path = images_dir / f"{patch_basename}.png"
+        plt.imsave(str(img_path), patch_np)
+
+        # Create an empty CSV file for annotations.
+        csv_path = labels_dir / f"{patch_basename}.csv"
+        with open(csv_path, mode="w", newline="") as cf:
+            writer = csv.writer(cf)
+            # (Empty file, as no annotations are available.)
+
+        idx_patch += 1
+    pbar.close()
+    print(f"Test dataset created at: {test_dir}")
+    return test_dir
+
+
+def _convert_coords(
+    x_pixel: float, y_pixel: float, micrometers_per_pixel: float, output_unit: str
+) -> Tuple[float, float]:
+    """
+    Convert pixel (x, y) coordinates to the desired output_unit:
+      - "pixel" -> No conversion needed, return as is
+      - "um"    -> Convert from pixels to micrometers
+      - "mm"    -> Convert from pixels to millimeters
+    """
+    if output_unit == "pixel":
+        return x_pixel, y_pixel  # Already in pixels
+    elif output_unit == "um":
+        x_um = x_pixel * micrometers_per_pixel  # Convert px to µm
+        y_um = y_pixel * micrometers_per_pixel
+        return x_um, y_um
+    elif output_unit == "mm":
+        x_mm = (x_pixel * micrometers_per_pixel) / 1000.0  # Convert px to mm
+        y_mm = (y_pixel * micrometers_per_pixel) / 1000.0
+        return x_mm, y_mm
+    else:
+        raise ValueError(
+            f"Unknown output_unit '{output_unit}'. Must be 'pixel', 'um', or 'mm'."
+        )
+
+
+def _build_annotation_json(
+    points: List[Tuple[float, float, float]],
+    annotation_name: str,
+    fixed_z_value: float = 0.0,
+) -> dict:
+    """
+    Build the annotation dictionary in the specified format:
+      {
+        "name": "inflammatory-cells" (etc.),
+        "type": "Multiple points",
+        "version": {"major": 1, "minor": 0},
+        "points": [
+           {
+             "name": "Point 0",
+             "point": [x, y, z],
+             "probability": ...
+           },
+           ...
+        ]
+      }
+
+    :param points: list of (x, y, probability)
+    :param annotation_name: e.g. 'inflammatory-cells'
+    :param fixed_z_value: in your original example, you might store 0.25 or 0.241999, etc.
+    :return: dict suitable for JSON serialization
+    """
+    annotation_dict = {
+        "name": annotation_name,
+        "type": "Multiple points",
+        "version": {"major": 1, "minor": 0},
+        "points": [],
+    }
+
+    for idx, (x_val, y_val, prob) in enumerate(points):
+        annotation_dict["points"].append(
+            {
+                "name": f"Point {idx}",
+                "point": [x_val, y_val, fixed_z_value],
+                "probability": prob,  # remove if you really don't want it
+            }
+        )
+
+    return annotation_dict
+
+
+def generate_inflammatory_annotation_dicts(
+    global_cell_pred_dict: Dict,
+    micrometers_per_pixel: float = 0.25,
+    output_unit: str = "mm",
+    fixed_z_value: float = 0.25,
+) -> Tuple[dict, dict, dict]:
+    """
+    Process the given global_cell_pred_dict (already in memory) and generate
+    three annotation dictionaries:
+      1. "inflammatory-cells" (combined monocytes + lymphocytes)
+      2. "monocytes"
+      3. "lymphocytes"
+
+    Args:
+        global_cell_pred_dict (Dict): Output of the CellViT pipeline, keyed by patch, containing cells.
+        micrometers_per_pixel (float): MPP scale (µm/pixel).
+        output_unit (str): "pixel", "um", or "mm".
+        fixed_z_value (float): Fixed Z coordinate value.
+
+    Returns:
+        Tuple[dict, dict, dict]: (inflammatory_dict, monocytes_dict, lymphocytes_dict)
+    """
+    monocytes_points = []
+    lymphocytes_points = []
+
+    for _, cells_in_patch in global_cell_pred_dict.items():
+        for _, cell_info in cells_in_patch.items():
+            cell_type = cell_info["type"]
+            if cell_type == 2:  # "other" => skip
+                continue
+
+            global_x, global_y = cell_info["global_centroid"]
+            probability = cell_info.get("type_prob", 1.0)
+
+            # Convert coords using `micrometers_per_pixel`
+            converted_x, converted_y = _convert_coords(
+                global_x, global_y, micrometers_per_pixel, output_unit
+            )
+
+            if cell_type == 0:  # monocytes
+                monocytes_points.append((converted_x, converted_y, probability))
+            elif cell_type == 1:  # lymphocytes
+                lymphocytes_points.append((converted_x, converted_y, probability))
+
+    # Combine for inflammatory-cells
+    inflammatory_points = monocytes_points + lymphocytes_points
+
+    inflammatory_dict = _build_annotation_json(
+        inflammatory_points, "inflammatory-cells", fixed_z_value
+    )
+    monocytes_dict = _build_annotation_json(
+        monocytes_points, "monocytes", fixed_z_value
+    )
+    lymphocytes_dict = _build_annotation_json(
+        lymphocytes_points, "lymphocytes", fixed_z_value
+    )
+
+    return inflammatory_dict, monocytes_dict, lymphocytes_dict
+
+
+def save_annotation_json(annotation_dict: dict, filepath: Path) -> None:
+    """
+    Helper function to save annotation JSON files.
+    """
+    with open(filepath, "w") as f:
+        json.dump(annotation_dict, f, indent=2)
 
 
 class CellViTInfExpDetection(CellViTClassifierInferenceExperiment):
@@ -114,11 +390,19 @@ class CellViTInfExpDetection(CellViTClassifierInferenceExperiment):
         normalize_stains: bool = False,
         gpu: int = 0,
         comment: str = None,
+        output_path: Union[Path, str] = None,  # Added output path argument
+        mpp_value: float = 0.24199951445730394,  # Added micrometers per pixel
     ) -> None:
-        assert len(input_shape) == 2, "Input shape must havea length of 2."
+        assert len(input_shape) == 2, "Input shape must have a length of 2."
         for in_sh in input_shape:
             assert in_sh in CELL_IMAGE_SIZES, "Shape entries must be divisible by 32."
+
         self.input_shape = input_shape
+        self.output_path = (
+            Path(output_path) if output_path else None
+        )  # Store output path
+        self.mpp_value = mpp_value  # Store micrometers per pixel
+
         super().__init__(
             logdir=logdir,
             cellvit_path=cellvit_path,
@@ -312,89 +596,8 @@ class CellViTInfExpDetection(CellViTClassifierInferenceExperiment):
 
     def _get_global_classifier_scores(
         self, predictions: torch.Tensor, probabilities: torch.Tensor, gt: torch.Tensor
-    ) -> Tuple[float, float, float, float, float, float]:
-        """Calculate global metrics for the classification head, *without* taking quality of the detection model into account
-
-        Args:
-            predictions (torch.Tensor): Class-Predictions. Shape: Num-cells
-            probabilities (torch.Tensor): Probabilities for all classes. Shape: Shape: Num-cells x Num-classes
-            gt (torch.Tensor): Ground-truth Predictions. Shape: Num-cells
-
-        Returns:
-            Tuple[float, float, float, float, float, float]:
-                * F1-Score
-                * Precision
-                * Recall
-                * Accuracy
-                * Auroc
-                * AP
-        """
-        auroc_func = AUROC(task="multiclass", num_classes=self.num_classes)
-        acc_func = Accuracy(task="multiclass", num_classes=self.num_classes)
-        f1_func = F1Score(task="multiclass", num_classes=self.num_classes)
-        prec_func = Precision(task="multiclass", num_classes=self.num_classes)
-        recall_func = Recall(task="multiclass", num_classes=self.num_classes)
-        average_prec_func = AveragePrecision(
-            task="multiclass", num_classes=self.num_classes
-        )
-
-        # scores without taking detection into account
-        auroc_score = float(auroc_func(probabilities, gt).detach().cpu())
-        acc_score = float(acc_func(predictions, gt).detach().cpu())
-        f1_score = float(f1_func(predictions, gt).detach().cpu())
-        prec_score = float(prec_func(predictions, gt).detach().cpu())
-        recall_score = float(recall_func(predictions, gt).detach().cpu())
-        average_prec = float(average_prec_func(probabilities, gt).detach().cpu())
-
-        return f1_score, prec_score, recall_score, acc_score, auroc_score, average_prec
-
-    def _plot_confusion_matrix(
-        self,
-        predictions: torch.Tensor,
-        gt: torch.Tensor,
-        test_result_dir: Union[Path, str],
-    ) -> None:
-        """Plot and save the confusion matrix (normalized and non-normalized)
-
-        Args:
-            predictions (torch.Tensor): Class-Predictions. Shape: Num-cells
-            gt (torch.Tensor): Ground-truth Predictions. Shape: Num-cells
-            test_result_dir (Union[Path, str]): Path to the test result directory
-        """
-        # confusion matrix
-        conf_matrix = pycm.ConfusionMatrix(
-            actual_vector=gt.detach().cpu().numpy(),
-            predict_vector=predictions.detach().cpu().numpy(),
-        )
-        label_map = self.run_conf["data"]["label_map"]
-        label_map = {int(k): v for k, v in label_map.items()}
-        conf_matrix.relabel(label_map)
-        conf_matrix.save_stat(
-            str(test_result_dir / "confusion_matrix_summary"), summary=True
-        )
-
-        axs = conf_matrix.plot(
-            cmap=plt.cm.Blues,
-            plot_lib="seaborn",
-            title="Confusion-Matrix",
-            number_label=True,
-        )
-        fig = axs.get_figure()
-        fig.savefig(str(test_result_dir / "confusion_matrix.png"), dpi=600)
-        fig.savefig(str(test_result_dir / "confusion_matrix.pdf"), dpi=600)
-        plt.close(fig)
-
-        axs = conf_matrix.plot(
-            cmap=plt.cm.Blues,
-            plot_lib="seaborn",
-            title="Confusion-Matrix",
-            number_label=True,
-            normalized=True,
-        )
-        fig = axs.get_figure()
-        fig.savefig(str(test_result_dir / "confusion_matrix_normalized.png"), dpi=600)
-        fig.savefig(str(test_result_dir / "confusion_matrix_normalized.pdf"), dpi=600)
-        plt.close(fig)
+    ):
+        return None
 
     def update_cell_dict_with_predictions(
         self,
@@ -446,401 +649,11 @@ class CellViTInfExpDetection(CellViTClassifierInferenceExperiment):
 
         return cell_dict
 
-    def _calculate_pipeline_scores(self, cell_dict: dict) -> Tuple[dict, dict, dict]:
-        """Calculate the final pipeline scores, use the TIA evaluation metrics
-
-        Args:
-            cell_dict (dict): Cell dictionary
-
-        Returns:
-            Tuple[dict, dict, dict]: Segmentation, PQ and Detection Scores
-        """
-        self.logger.info(
-            "Calculating dataset scores according to TIA Evaluation guidelines"
-        )
-        detection_tracker = {
-            "paired_all": [],
-            "unpaired_true_all": [],
-            "unpaired_pred_all": [],
-            "true_inst_type_all": [],
-            "pred_inst_type_all": [],
-        }
-        true_idx_offset = 0
-        pred_idx_offset = 0
-
-        annot_path = self.dataset_path / "test" / "labels"
-
-        for image_idx, (image_name, cells) in tqdm.tqdm(
-            enumerate(cell_dict.items()), total=len(cell_dict)
-        ):
-            cell_annot = pd.read_csv(annot_path / f"{image_name}.csv", header=None)
-            cell_annot = [
-                (int(row[0]), int(row[1]), row[2]) for _, row in cell_annot.iterrows()
-            ]
-            detections_gt = [(int(x), int(y)) for x, y, _ in cell_annot]
-            types_gt = [l for _, _, l in cell_annot]
-
-            true_centroids = np.array(detections_gt)
-            true_instance_type = np.array(types_gt)
-            pred_centroids = np.array([v["centroid"] for k, v in cells.items()])
-            pred_instance_type = np.array([v["type"] for k, v in cells.items()])  # +1?
-
-            if true_centroids.shape[0] == 0:
-                true_centroids = np.array([[0, 0]])
-                true_instance_type = np.array([0])
-            if pred_centroids.shape[0] == 0:
-                pred_centroids = np.array([[0, 0]])
-                pred_instance_type = np.array([0])
-
-            pairing_radius = 12
-            paired, unpaired_true, unpaired_pred = pair_coordinates(
-                true_centroids, pred_centroids, pairing_radius
-            )
-            true_idx_offset = (
-                true_idx_offset + detection_tracker["true_inst_type_all"][-1].shape[0]
-                if image_idx != 0
-                else 0
-            )
-            pred_idx_offset = (
-                pred_idx_offset + detection_tracker["pred_inst_type_all"][-1].shape[0]
-                if image_idx != 0
-                else 0
-            )
-            detection_tracker["true_inst_type_all"].append(true_instance_type)
-            detection_tracker["pred_inst_type_all"].append(pred_instance_type)
-            # increment the pairing index statistic
-            if paired.shape[0] != 0:  # ! sanity
-                paired[:, 0] += true_idx_offset
-                paired[:, 1] += pred_idx_offset
-                detection_tracker["paired_all"].append(paired)
-
-            unpaired_true += true_idx_offset
-            unpaired_pred += pred_idx_offset
-            detection_tracker["unpaired_true_all"].append(unpaired_true)
-            detection_tracker["unpaired_pred_all"].append(unpaired_pred)
-
-        detection_tracker["paired_all"] = np.concatenate(
-            detection_tracker["paired_all"], axis=0
-        )
-        detection_tracker["unpaired_true_all"] = np.concatenate(
-            detection_tracker["unpaired_true_all"], axis=0
-        )
-        detection_tracker["unpaired_pred_all"] = np.concatenate(
-            detection_tracker["unpaired_pred_all"], axis=0
-        )
-        detection_tracker["true_inst_type_all"] = np.concatenate(
-            detection_tracker["true_inst_type_all"], axis=0
-        )
-        detection_tracker["pred_inst_type_all"] = np.concatenate(
-            detection_tracker["pred_inst_type_all"], axis=0
-        )
-
-        detection_tracker["paired_true_type"] = detection_tracker["true_inst_type_all"][
-            detection_tracker["paired_all"][:, 0]
-        ]
-        detection_tracker["paired_pred_type"] = detection_tracker["pred_inst_type_all"][
-            detection_tracker["paired_all"][:, 1]
-        ]
-        detection_tracker["unpaired_true_type"] = detection_tracker[
-            "true_inst_type_all"
-        ][detection_tracker["unpaired_true_all"]]
-        detection_tracker["unpaired_pred_type"] = detection_tracker[
-            "pred_inst_type_all"
-        ][detection_tracker["unpaired_pred_all"]]
-
-        # global scores
-        f1_d, prec_d, rec_d = cell_detection_scores(
-            paired_true=detection_tracker["paired_true_type"],
-            paired_pred=detection_tracker["paired_pred_type"],
-            unpaired_true=detection_tracker["unpaired_true_type"],
-            unpaired_pred=detection_tracker["unpaired_pred_type"],
-        )
-        detection_scores = {"binary": {}, "cell_types": {}}
-        detection_scores["binary"] = {"f1": f1_d, "prec": prec_d, "rec": rec_d}
-
-        for cell_idx in range(self.num_classes):
-            detection_scores["cell_types"][cell_idx] = {}
-            f1_c, prec_c, rec_c = cell_type_detection_scores(
-                paired_true=detection_tracker["paired_true_type"],
-                paired_pred=detection_tracker["paired_pred_type"],
-                unpaired_true=detection_tracker["unpaired_true_type"],
-                unpaired_pred=detection_tracker["unpaired_pred_type"],
-                type_id=cell_idx,
-            )
-            detection_scores["cell_types"][cell_idx] = {
-                "f1": f1_c,
-                "prec": prec_c,
-                "rec": rec_c,
-            }
-
-        label_map = self.run_conf["data"]["label_map"]
-        label_map = {int(k): v for k, v in label_map.items()}
-
-        cls_idx_to_name = label_map
-
-        # prepare and transform to match the detection data format
-        image_idx = list(
-            set(sorted([f.stem.split("_")[0] for f in annot_path.glob("*.csv")]))
-        )
-
-        # ground-truth
-        gt_tracker = {i: [] for i in image_idx}
-        pred_tracker = {i: [] for i in image_idx}
-        for _, (image_name, cells) in tqdm.tqdm(
-            enumerate(cell_dict.items()), total=len(cell_dict)
-        ):
-            tcga_name = image_name.split("_")[0]
-            cell_annot = pd.read_csv(annot_path / f"{image_name}.csv", header=None)
-            cell_annot = [
-                (int(row[0]), int(row[1]), row[2]) for _, row in cell_annot.iterrows()
-            ]
-            detections_gt = [(int(x), int(y)) for x, y, _ in cell_annot]
-            types_gt = [l for _, _, l in cell_annot]
-            for (x, y), type_prediction in zip(detections_gt, types_gt):
-                gt_tracker[tcga_name].append((x, y, type_prediction, 1))
-
-            for cell_idx, values in cells.items():
-                prob = values["type_prob"]
-                type_prediction = values["type"]
-                x, y = (
-                    int(np.round(values["centroid"][0])),
-                    int(np.round(values["centroid"][1])),
-                )
-                pred_tracker[tcga_name].append((x, y, type_prediction, prob))
-
-        # combine
-        pred_tracker_ocelot = []
-        gt_tracker_ocelot = []
-        for img_idx in image_idx:
-            pred_tracker_ocelot.append(pred_tracker[img_idx])
-            gt_tracker_ocelot.append(gt_tracker[img_idx])
-
-        # calculate result, type specific
-        all_sample_result = _preprocess_distance_and_confidence(
-            pred_tracker_ocelot, gt_tracker_ocelot, cls_idx_to_name
-        )
-        scores = {}
-        for cls_idx, cls_name in cls_idx_to_name.items():
-            precision, recall, f1 = _calc_scores(all_sample_result, cls_idx, 15)
-            scores[f"Pre/{cls_name}"] = precision
-            scores[f"Rec/{cls_name}"] = recall
-            scores[f"F1/{cls_name}"] = f1
-        scores["mF1"] = sum(
-            [scores[f"F1/{cls_name}"] for cls_name in cls_idx_to_name.values()]
-        ) / len(cls_idx_to_name)
-
-        self.logger.info(scores)
-
-        return detection_scores, scores
-
     def run_inference(self):
-        """Run Inference on Test Dataset"""
-        extracted_cells = []  # all cells detected with cellvit
-        # extracted_cells_cleaned = []  # all cells detected with cellvit, but only the ones that are paired with ground truth (no false positives)
-        image_pred_dict = {}  # dict with all cells detected with cellvit (including false positives)
-        # detection_scores = {
-        #     "F1": [],
-        #     "Prec": [],
-        #     "Rec": [],
-        # }
-        # scores = {}
+        """Run inference without ground truth, classify cells, convert patch-local predictions to global WSI coordinates, and save only the JSON results."""
 
-        postprocessor = DetectionCellPostProcessorCupy(wsi=None, nr_types=6)
-        cellvit_dl = DataLoader(
-            self.inference_dataset,
-            batch_size=4,
-            num_workers=8,
-            shuffle=False,
-            collate_fn=self.inference_dataset.collate_batch,
-        )
-
-        # Step 1: Extract cells with CellViT
-        with torch.no_grad():
-            for _, (images, cell_gt_batch, types_batch, image_names) in tqdm.tqdm(
-                enumerate(cellvit_dl), total=len(cellvit_dl)
-            ):
-                (
-                    batch_cells_cleaned,
-                    batch_cells,
-                    batch_pred_dict,
-                    batch_f1s,
-                    batch_recs,
-                    batch_precs,
-                ) = self._get_cellvit_result(
-                    images=images,
-                    cell_gt_batch=cell_gt_batch,
-                    types_batch=types_batch,
-                    image_names=image_names,
-                    postprocessor=postprocessor,
-                )
-                extracted_cells = extracted_cells + batch_cells
-                # extracted_cells_cleaned = extracted_cells_cleaned + batch_cells_cleaned
-                image_pred_dict.update(batch_pred_dict)
-                # detection_scores["F1"] = detection_scores["F1"] + batch_f1s
-                # detection_scores["Prec"] = detection_scores["Prec"] + batch_precs
-                # detection_scores["Rec"] = detection_scores["Rec"] + batch_recs
-
-            # cellvit_detection_scores = {
-            #     "F1": float(np.mean(np.array(detection_scores["F1"]))),
-            #     "Prec": float(np.mean(np.array(detection_scores["Prec"]))),
-            #     "Rec": float(np.mean(np.array(detection_scores["Rec"]))),
-            # }
-            # self.logger.info(
-            #     f"Extraction detection metrics - F1: {cellvit_detection_scores['F1']:.3f}, Precision: {cellvit_detection_scores['Prec']:.3f}, Recall: {cellvit_detection_scores['Rec']:.3f}"
-            # )
-            # scores["cellvit_scores"] = cellvit_detection_scores
-
-        # # Step 2: Classify Cell Tokens with the classifier, but only the cleaned version
-        # cleaned_inference_results = self._get_classifier_result(extracted_cells_cleaned)
-
-        # scores["classifier"] = {}
-        # scores["cellvit_scores"] = cellvit_detection_scores
-        # (
-        #     f1_score,
-        #     prec_score,
-        #     recall_score,
-        #     acc_score,
-        #     auroc_score,
-        #     ap_score,
-        # ) = self._get_global_classifier_scores(
-        #     predictions=cleaned_inference_results["predictions"],
-        #     probabilities=cleaned_inference_results["probabilities"],
-        #     gt=cleaned_inference_results["gt"],
-        # )
-        # self.logger.info(
-        #     "Global Scores - Without taking cell detection quality into account:"
-        # )
-        # self.logger.info(
-        #     f"F1: {f1_score:.3} - Prec: {prec_score:.3} - Rec: {recall_score:.3} - Acc: {acc_score:.3} - Auroc: {auroc_score:.3}"
-        # )
-        # scores["classifier"]["global"] = {
-        #     "F1": f1_score,
-        #     "Prec": prec_score,
-        #     "Rec": recall_score,
-        #     "Acc": acc_score,
-        #     "Auroc": auroc_score,
-        #     "AP": ap_score,
-        # }
-
-        # self._plot_confusion_matrix(
-        #     predictions=cleaned_inference_results["predictions"],
-        #     gt=cleaned_inference_results["gt"],
-        #     test_result_dir=self.test_result_dir,
-        # )
-
-        # Step 3: Classify Cell Tokens, but with the uncleaned version and calculate Ocelot Metrics
-        inference_results = self._get_classifier_result(extracted_cells)
-        inference_results.pop("gt")
-        cell_pred_dict = self.update_cell_dict_with_predictions(
-            cell_dict=image_pred_dict,
-            predictions=inference_results["predictions"].numpy(),
-            probabilities=inference_results["probabilities"].numpy(),
-            metadata=inference_results["metadata"],
-        )
-
-        # # Step 4: Evaluate the whole pipeline and calculating the final scores
-        # (detection_scores_tia, scores_ocelot) = self._calculate_pipeline_scores(
-        #     cell_pred_dict
-        # )
-        # scores["pipeline"] = {
-        #     "detection_scores_tia": detection_scores_tia,
-        #     "scores_ocelot": scores_ocelot,
-        # }
-        # label_map = self.run_conf["data"]["label_map"]
-        # label_map = {
-        #     int(k): v for k, v in label_map.items()
-        # }  # replace cell_type by names and jsonify
-        # scores["pipeline"]["detection_scores_tia"]["cell_types"] = {
-        #     label_map[k]: v
-        #     for k, v in scores["pipeline"]["detection_scores_tia"]["cell_types"].items()
-        # }
-        cell_pred_dict = json.dumps(cell_pred_dict, indent=2)
-        self.logger.info(f"{50*'*'}")
-        self.logger.info(cell_pred_dict)
-
-        with open(self.test_result_dir / "cell_pred_dict.json", "w") as json_file:
-            json.dump(cell_pred_dict, json_file, indent=2)
-
-    def _save_geojson_overall_cells(
-        self, extracted_cells: list[dict], output_path: str
-    ) -> None:
-        """
-        Save overall cell detections as a GeoJSON file with global pixel coordinates as points.
-
-        Args:
-            extracted_cells (list[dict]): List of detected cells with global coordinates.
-            output_path (str): Path to save the GeoJSON file.
-        """
-
-        COLOR_DICT_CELLS = {
-            0: [92, 20, 186],
-            1: [255, 0, 0],
-            2: [34, 221, 77],
-            3: [35, 92, 236],
-            4: [254, 255, 0],
-            5: [255, 159, 68],
-            6: [80, 56, 112],
-            7: [87, 112, 56],
-            8: [110, 0, 0],
-            9: [255, 196, 196],
-            10: [214, 255, 196],
-        }
-        if not extracted_cells:
-            self.logger.warning("No extracted cells found. Skipping GeoJSON saving.")
-            return
-
-        # Convert extracted cells to a DataFrame
-        cell_df = pd.DataFrame(extracted_cells)
-
-        # Ensure required fields exist
-        if "global_centroid" not in cell_df.columns or "type" not in cell_df.columns:
-            self.logger.error(
-                "Missing required keys ('global_centroid', 'type') in extracted cells."
-            )
-            return
-
-        # Create a GeoJSON structure
-        geojson_features = []
-        detected_types = sorted(cell_df["type"].unique())
-
-        for cell_type in detected_types:
-            # Filter cells by type
-            cells = cell_df[cell_df["type"] == cell_type]
-            centroids = cells["global_centroid"].tolist()
-
-            # Create a GeoJSON feature for the cell type
-            cell_geojson_object = {
-                "type": "Feature",
-                "id": str(uuid.uuid4()),
-                "geometry": {
-                    "type": "MultiPoint",
-                    "coordinates": centroids,  # Global pixel coordinates
-                },
-                "properties": {
-                    "classification": {
-                        "name": self.label_map.get(cell_type, f"Type {cell_type}"),
-                        "color": COLOR_DICT_CELLS.get(
-                            cell_type, "#000000"
-                        ),  # Default to black if unknown
-                    }
-                },
-            }
-            geojson_features.append(cell_geojson_object)
-
-        # Construct final GeoJSON object
-        geojson_output = {"type": "FeatureCollection", "features": geojson_features}
-
-        # Save to file
-        with open(output_path, "w") as geojson_file:
-            json.dump(geojson_output, geojson_file, indent=2)
-
-        self.logger.info(f"GeoJSON saved successfully at {output_path}")
-
-    def run_inference_no_gt(self):
-        """Run Inference on Test Dataset (no GT), classify cells, convert patch-local predictions
-        to global coordinates in mm, and save result as JSON and GeoJSON."""
-        extracted_cells = []  # all cells detected with CellViT
-        image_pred_dict = {}  # dictionary with all cells detected, keyed by patch name
+        extracted_cells = []  # All detected cells
+        image_pred_dict = {}  # Dictionary with all detected cells
 
         postprocessor = DetectionCellPostProcessorCupy(wsi=None, nr_types=6)
         cellvit_dl = DataLoader(
@@ -853,14 +666,14 @@ class CellViTInfExpDetection(CellViTClassifierInferenceExperiment):
 
         # Step 1: Extract cells with CellViT (GT is empty in test mode)
         with torch.no_grad():
-            for _, (images, cell_gt_batch, types_batch, image_names) in tqdm.tqdm(
+            for _, (images, _, _, image_names) in tqdm.tqdm(
                 enumerate(cellvit_dl), total=len(cellvit_dl)
             ):
                 _, overall_extracted_cells, batch_pred_dict, _, _, _ = (
                     self._get_cellvit_result(
                         images=images,
-                        cell_gt_batch=cell_gt_batch,  # empty lists in test mode
-                        types_batch=types_batch,  # may be empty or dummy values
+                        cell_gt_batch=[],  # Empty GT in test mode
+                        types_batch=[],  # Dummy values
                         image_names=image_names,
                         postprocessor=postprocessor,
                     )
@@ -868,13 +681,16 @@ class CellViTInfExpDetection(CellViTClassifierInferenceExperiment):
                 image_pred_dict.update(batch_pred_dict)
                 extracted_cells.extend(overall_extracted_cells)
 
-        # Step 2: Classify cells using their extracted tokens
-        classification_results = self._get_classifier_result(extracted_cells)
+        # Step 2: Ensure extracted_cells contains data
+        if not extracted_cells:
+            self.logger.warning(
+                "❌ No cells detected! Check model weights and input data."
+            )
+            return
 
-        # Ensure classification results are JSON serializable
-        classification_results.pop(
-            "gt", None
-        )  # Remove ground truth (not available in test mode)
+        # Step 3: Classify cells using extracted tokens
+        classification_results = self._get_classifier_result(extracted_cells)
+        classification_results.pop("gt", None)  # No ground truth in test mode
         classification_results["predictions"] = (
             classification_results["predictions"].numpy().tolist()
         )
@@ -882,7 +698,7 @@ class CellViTInfExpDetection(CellViTClassifierInferenceExperiment):
             classification_results["probabilities"].numpy().tolist()
         )
 
-        # Step 3: Update cell dictionary with classifier predictions
+        # Step 4: Update cell dictionary with classifier predictions
         cell_pred_dict = self.update_cell_dict_with_predictions(
             cell_dict=image_pred_dict,
             predictions=np.array(classification_results["predictions"]),
@@ -890,33 +706,32 @@ class CellViTInfExpDetection(CellViTClassifierInferenceExperiment):
             metadata=classification_results["metadata"],
         )
 
-        # Step 4: Convert patch-local cell centroids to global WSI coordinates (in mm)
+        # Step 5: Convert patch-local cell centroids to global WSI coordinates (in mm)
         global_cell_pred_dict = {}
         for patch_name, cells in cell_pred_dict.items():
             try:
                 slide_id, patch_x, patch_y = parse_patch_basename(patch_name)
             except Exception as e:
-                self.logger.error(f"Error parsing patch name {patch_name}: {e}")
+                self.logger.error(f"❌ Error parsing patch name {patch_name}: {e}")
                 continue
 
             global_cells = {}
             for cell_idx, cell in cells.items():
                 local_centroid = cell.get("centroid", [0, 0])
 
-                # Combine local + patch offset in pixels
+                # Compute global coordinates
                 x_global_px = local_centroid[0] + patch_x
                 y_global_px = local_centroid[1] + patch_y
-
                 global_centroid_px = [x_global_px, y_global_px]
 
                 # Ensure required fields exist
                 if "type" not in cell:
                     self.logger.error(
-                        f"Missing 'type' for cell in patch {patch_name}. Skipping."
+                        f"❌ Missing 'type' for cell in patch {patch_name}. Skipping."
                     )
                     continue
 
-                # Convert NumPy arrays/tensors to lists
+                # Convert to JSON serializable format
                 cell_cleaned = {
                     key: (
                         value.tolist()
@@ -928,396 +743,55 @@ class CellViTInfExpDetection(CellViTClassifierInferenceExperiment):
                 cell_cleaned["global_centroid"] = global_centroid_px
                 global_cells[cell_idx] = cell_cleaned
 
-                # # Add to final extracted cells
-                # final_extracted_cells.append(
-                #     {
-                #         "global_centroid": global_centroid_px,
-                #         "type": cell_cleaned["type"],
-                #         "probability": cell_cleaned.get("type_prob", None),
-                #         "contour": cell_cleaned.get("contour", None),
-                #     }
-                # )
-
             global_cell_pred_dict[patch_name] = global_cells
 
-        # Step 5: Serialize to JSON
-        final_pred_path = Path(self.test_result_dir) / "global_cell_pred_dict.json"
-        with open(final_pred_path, "w") as f:
-            json.dump(global_cell_pred_dict, f, indent=2)
-        self.logger.info(f"Global cell predictions saved to {final_pred_path}")
-
-        # Generate annotation JSON for monocytes, lymphocytes, and combined
+        # Step 6: Generate annotation JSONs for monocytes, lymphocytes, and inflammatory cells
         inflammatory_dict, monocytes_dict, lymphocytes_dict = (
             generate_inflammatory_annotation_dicts(
                 global_cell_pred_dict,
-                micrometers_per_pixel=0.24199951445730394,
-                output_unit="mm",  # could also be "pixel" or "um"
-                fixed_z_value=0.24199951445730394,
+                micrometers_per_pixel=self.mpp_value,  # Now using class variable
+                output_unit="mm",
+                fixed_z_value=self.mpp_value,
             )
         )
 
-        save_annotation_json(inflammatory_dict, "detected-inflammatory-cells.json")
-        save_annotation_json(monocytes_dict, "detected-monocytes.json")
-        save_annotation_json(lymphocytes_dict, "detected-lymphocytes.json")
-
-
-def px_to_mm(px: float, spacing: float = 0.25) -> float:
-    """
-    Convert pixel coordinates to millimeters, given a micrometers-per-pixel spacing.
-    E.g. if spacing=0.25 (µm/px), then 1 px = 0.25 µm = 0.00025 mm.
-    """
-    return px * spacing / 1000.0
-
-
-def parse_patch_basename(patch_basename: str) -> Tuple[str, float, float]:
-    """
-    Parse a patch basename that contains x and y offsets.
-    For example, if patch_basename = "A_P000001_PAS_CPG_x9984_y87808_105",
-    it extracts:
-      - slide_id: "A_P000001_PAS_CPG" (all parts before the first part starting with 'x')
-      - patch_x: 9984.0
-      - patch_y: 87808.0
-    """
-    parts = patch_basename.split("_")
-    slide_parts = []
-    patch_x = None
-    patch_y = None
-    for part in parts:
-        if part.startswith("x"):
-            try:
-                patch_x = float(part.lstrip("x"))
-            except ValueError:
-                raise ValueError(f"Error parsing x coordinate in: {patch_basename}")
-        elif part.startswith("y"):
-            try:
-                patch_y = float(part.lstrip("y"))
-            except ValueError:
-                raise ValueError(f"Error parsing y coordinate in: {patch_basename}")
-        else:
-            # Append parts until we encounter a part starting with "x"
-            if patch_x is None:
-                slide_parts.append(part)
-    slide_id = "_".join(slide_parts)
-    if patch_x is None or patch_y is None:
-        raise ValueError(f"Could not parse x,y from patch basename: {patch_basename}")
-    return slide_id, patch_x, patch_y
-
-
-# class CellViTInfExpDetectionParser:
-#     def __init__(self) -> None:
-#         parser = argparse.ArgumentParser(
-#             formatter_class=argparse.ArgumentDefaultsHelpFormatter,
-#             description="Perform CellViT-Classifier inference for Detection Data",
-#         )
-#         parser.add_argument(
-#             "--logdir",
-#             type=str,
-#             help="Path to the log directory with the trained head.",
-#         )
-#         parser.add_argument("--dataset_path", type=str, help="Path to the dataset")
-#         parser.add_argument(
-#             "--cellvit_path", type=str, help="Path to the Cellvit model"
-#         )
-#         parser.add_argument(
-#             "--normalize_stains",
-#             action="store_true",
-#             help="If stains should be normalized for inference",
-#         )
-#         parser.add_argument(
-#             "--gpu", type=int, help="Number of CUDA GPU to use", default=0
-#         )
-#         parser.add_argument(
-#             "--input_shape",
-#             type=int,
-#             nargs=2,
-#             required=True,
-#             help="Input image shape as a list of two integers (height, width)",
-#         )
-#         self.parser = parser
-
-#     def parse_arguments(self) -> dict:
-#         opt = self.parser.parse_args()
-#         return vars(opt)
-
-
-def create_test_dataset(
-    wsi_path: str,
-    mask_path: str,
-    output_dir: str,
-    patch_shape: tuple = (1024, 1024, 3),
-    spacings: tuple = (0.25,),
-    overlap: tuple = (0, 0),
-    offset: tuple = (0, 0),
-    center: bool = False,
-    cpus: int = 4,
-) -> Path:
-    """
-    Create a CellViT-compatible test dataset from a single WSI.
-    Patches are saved under output_dir/test/images and empty CSV files under output_dir/test/labels.
-    Each patch filename embeds the slide id, global x and y coordinates and a unique patch index.
-
-    Args:
-        wsi_path (str): Path to the WSI image.
-        mask_path (str): Path to the WSI mask (optional; if not present, pass an empty string).
-        output_dir (str): Root directory for the test dataset.
-        patch_shape (tuple): Shape of each patch (H, W, C).
-        spacings (tuple): Spacing value(s) for patch extraction.
-        overlap (tuple): Overlap in pixels along x and y.
-        offset (tuple): Offset in pixels.
-        center (bool): Whether to center the patches.
-        cpus (int): Number of CPU cores to use.
-
-    Returns:
-        Path: Path to the test dataset folder.
-    """
-    output_dir = Path(output_dir)
-    train_dir = output_dir / "train"
-    images_train_dir = train_dir / "images"
-    labels_train_dir = train_dir / "labels"
-    os.makedirs(images_train_dir, exist_ok=True)
-    os.makedirs(labels_train_dir, exist_ok=True)
-
-    splits_dir = output_dir / "splits"
-    os.makedirs(splits_dir, exist_ok=True)
-
-    test_dir = output_dir / "test"
-    images_dir = test_dir / "images"
-    labels_dir = test_dir / "labels"
-    os.makedirs(images_dir, exist_ok=True)
-    os.makedirs(labels_dir, exist_ok=True)
-
-    # Create the patch configuration
-    patch_config = PatchConfiguration(
-        patch_shape=patch_shape,
-        spacings=spacings,
-        overlap=overlap,
-        offset=offset,
-        center=center,
-    )
-
-    # Create the patch iterator.
-    patch_iterator = create_patch_iterator(
-        image_path=wsi_path,
-        mask_path=mask_path if mask_path and os.path.isfile(mask_path) else None,
-        patch_configuration=patch_config,
-        cpus=cpus,
-        backend="asap",
-    )
-
-    slide_id = Path(
-        wsi_path
-    ).stem  # Use the WSI filename (without extension) as slide id.
-    pbar = tqdm.tqdm(patch_iterator, desc="Creating test patches")
-    idx_patch = 0
-    for patch_data, mask_data, info in pbar:
-        # Get the patch image as a numpy array.
-        patch_np = patch_data.squeeze().astype(np.uint8)  # shape (H, W, 3)
-        H, W, _ = info["tile_shape"]
-        # Global coordinates for this patch (assumed provided in info).
-        patch_x = info.get("x", 0)
-        patch_y = info.get("y", 0)
-
-        # Build a patch basename that includes the slide id, patch_x, patch_y, and a unique index.
-        patch_basename = f"{slide_id}_x{patch_x}_y{patch_y}_{idx_patch}"
-
-        # Save the patch image.
-        img_path = images_dir / f"{patch_basename}.png"
-        plt.imsave(str(img_path), patch_np)
-
-        # Create an empty CSV file for annotations.
-        csv_path = labels_dir / f"{patch_basename}.csv"
-        with open(csv_path, mode="w", newline="") as cf:
-            writer = csv.writer(cf)
-            # (Empty file, as no annotations are available.)
-
-        idx_patch += 1
-    pbar.close()
-    print(f"Test dataset created at: {test_dir}")
-    return test_dir
-
-
-def _convert_coords(
-    x_pixel: float, y_pixel: float, micrometers_per_pixel: float, output_unit: str
-) -> Tuple[float, float]:
-    """
-    Convert pixel (x, y) coordinates to the desired output_unit:
-      - "pixel" -> No conversion needed, return as is
-      - "um"    -> Convert from pixels to micrometers
-      - "mm"    -> Convert from pixels to millimeters
-    """
-    if output_unit == "pixel":
-        return x_pixel, y_pixel  # Already in pixels
-    elif output_unit == "um":
-        x_um = x_pixel * micrometers_per_pixel  # Convert px to µm
-        y_um = y_pixel * micrometers_per_pixel
-        return x_um, y_um
-    elif output_unit == "mm":
-        x_mm = (x_pixel * micrometers_per_pixel) / 1000.0  # Convert px to mm
-        y_mm = (y_pixel * micrometers_per_pixel) / 1000.0
-        return x_mm, y_mm
-    else:
-        raise ValueError(
-            f"Unknown output_unit '{output_unit}'. Must be 'pixel', 'um', or 'mm'."
-        )
-
-
-def _build_annotation_json(
-    points: List[Tuple[float, float, float]],
-    annotation_name: str,
-    fixed_z_value: float = 0.0,
-) -> dict:
-    """
-    Build the annotation dictionary in the specified format:
-      {
-        "name": "inflammatory-cells" (etc.),
-        "type": "Multiple points",
-        "version": {"major": 1, "minor": 0},
-        "points": [
-           {
-             "name": "Point 0",
-             "point": [x, y, z],
-             "probability": ...
-           },
-           ...
-        ]
-      }
-
-    :param points: list of (x, y, probability)
-    :param annotation_name: e.g. 'inflammatory-cells'
-    :param fixed_z_value: in your original example, you might store 0.25 or 0.241999, etc.
-    :return: dict suitable for JSON serialization
-    """
-    annotation_dict = {
-        "name": annotation_name,
-        "type": "Multiple points",
-        "version": {"major": 1, "minor": 0},
-        "points": [],
-    }
-
-    for idx, (x_val, y_val, prob) in enumerate(points):
-        annotation_dict["points"].append(
-            {
-                "name": f"Point {idx}",
-                "point": [x_val, y_val, fixed_z_value],
-                "probability": prob,  # remove if you really don't want it
-            }
-        )
-
-    return annotation_dict
-
-
-def generate_inflammatory_annotation_dicts(
-    global_cell_pred_dict: Dict,
-    micrometers_per_pixel: float = 0.25,
-    output_unit: str = "mm",
-    fixed_z_value: float = 0.25,
-) -> Tuple[dict, dict, dict]:
-    """
-    Process the given global_cell_pred_dict (already in memory) and generate
-    three annotation dictionaries:
-      1. "inflammatory-cells" (combined monocytes + lymphocytes)
-      2. "monocytes"
-      3. "lymphocytes"
-
-    Args:
-        global_cell_pred_dict (Dict): Output of the CellViT pipeline, keyed by patch, containing cells.
-        micrometers_per_pixel (float): MPP scale (µm/pixel), default=0.25.
-        output_unit (str): "pixel", "um", or "mm". Determines how we scale coordinates.
-        fixed_z_value (float): The fixed Z dimension or third coordinate in your annotation.
-
-    Returns:
-        Tuple[dict, dict, dict]: (inflammatory_dict, monocytes_dict, lymphocytes_dict)
-    """
-    monocytes_points = []
-    lymphocytes_points = []
-
-    for _, cells_in_patch in global_cell_pred_dict.items():
-        for _, cell_info in cells_in_patch.items():
-            cell_type = cell_info["type"]
-            if cell_type == 2:  # "other" => skip
-                continue
-
-            global_x, global_y = cell_info["global_centroid"]
-            probability = cell_info.get("type_prob", 1.0)
-
-            # Convert coords if not using raw pixels
-            converted_x, converted_y = _convert_coords(
-                global_x, global_y, micrometers_per_pixel, output_unit
+        # Step 7: Save JSON files to specified output directory
+        if self.output_path:
+            self.output_path.mkdir(parents=True, exist_ok=True)
+            save_annotation_json(
+                inflammatory_dict, self.output_path / "detected-inflammatory-cells.json"
             )
-
-            if cell_type == 0:  # monocytes
-                monocytes_points.append((converted_x, converted_y, probability))
-            elif cell_type == 1:  # lymphocytes
-                lymphocytes_points.append((converted_x, converted_y, probability))
-
-    # Combine for inflammatory-cells
-    inflammatory_points = monocytes_points + lymphocytes_points
-
-    inflammatory_dict = _build_annotation_json(
-        inflammatory_points, "inflammatory-cells", fixed_z_value
-    )
-    monocytes_dict = _build_annotation_json(
-        monocytes_points, "monocytes", fixed_z_value
-    )
-    lymphocytes_dict = _build_annotation_json(
-        lymphocytes_points, "lymphocytes", fixed_z_value
-    )
-
-    return inflammatory_dict, monocytes_dict, lymphocytes_dict
+            save_annotation_json(
+                monocytes_dict, self.output_path / "detected-monocytes.json"
+            )
+            save_annotation_json(
+                lymphocytes_dict, self.output_path / "detected-lymphocytes.json"
+            )
+            self.logger.info(f"✅ JSON results saved in {self.output_path}")
 
 
-def save_annotation_json(annotation_dict: dict, filepath: str) -> None:
-    """
-    Simple helper to save the given annotation dictionary as JSON.
-    """
-    with open(filepath, "w") as f:
-        json.dump(annotation_dict, f, indent=2)
-
-
-# Example usage (uncomment if needed):
-# def main():
-#     # Suppose you already have global_cell_pred_dict in memory, e.g.:
-#     # global_cell_pred_dict = {...}  # from your pipeline
-#
-#     # Generate in memory
-#     inflammatory_dict, monocytes_dict, lymphocytes_dict = generate_inflammatory_annotation_dicts(
-#         global_cell_pred_dict,
-#         micrometers_per_pixel=0.25,
-#         output_unit="mm",    # or "pixel" or "um"
-#         fixed_z_value=0.25
-#     )
-#
-#     # Optionally save them
-#     save_annotation_json(inflammatory_dict, "inflammatory-cells.json")
-#     save_annotation_json(monocytes_dict, "monocytes.json")
-#     save_annotation_json(lymphocytes_dict, "lymphocytes.json")
-#
 # if __name__ == "__main__":
-#     main()
+#     # configuration_parser = CellViTInfExpDetectionParser()
+#     # configuration = configuration_parser.parse_arguments()
 
+#     create_test_dataset(
+#         wsi_path="/work/grana_urologia/MONKEY_challenge/source/sota_architectures/test_data/A_P000001_PAS_CPG.tif",
+#         mask_path="/work/grana_urologia/MONKEY_challenge/data/monkey-data/images/tissue-masks/A_P000001_mask.tif",
+#         output_dir="/work/grana_urologia/MONKEY_challenge/data/monkey_inference_test",
+#         patch_shape=(256, 256, 3),
+#         spacings=(0.25,),
+#         overlap=(0, 0),
+#         offset=(0, 0),
+#         center=False,
+#         cpus=4,
+#     )
 
-if __name__ == "__main__":
-    # configuration_parser = CellViTInfExpDetectionParser()
-    # configuration = configuration_parser.parse_arguments()
-
-    # create_test_dataset(
-    #     wsi_path="/work/grana_urologia/MONKEY_challenge/source/sota_architectures/test_data/A_P000001_PAS_CPG.tif",
-    #     mask_path="/work/grana_urologia/MONKEY_challenge/data/monkey-data/images/tissue-masks/A_P000001_mask.tif",
-    #     output_dir="/work/grana_urologia/MONKEY_challenge/data/monkey_inference_test",
-    #     patch_shape=(256, 256, 3),
-    #     spacings=(0.25,),
-    #     overlap=(0, 0),
-    #     offset=(0, 0),
-    #     center=False,
-    #     cpus=4,
-    # )
-
-    experiment = CellViTInfExpDetection(
-        logdir="/work/grana_urologia/MONKEY_challenge/source/sota_architectures/CellViT-plus-plus/model_test/2025-02-08T145641_cellvit++ sam-h finetuning",  # clf needs to be in the path: "logdir/checkpoints/model_best.pth"
-        cellvit_path="/work/grana_urologia/MONKEY_challenge/source/sota_architectures/CellViT-plus-plus/checkpoints/SAM/CellViT-SAM-H-x40-AMP.pth",
-        dataset_path="/work/grana_urologia/MONKEY_challenge/data/monkey_inference_test",
-        normalize_stains=False,
-        gpu="0",
-        input_shape=(256, 256),
-    )
-    experiment.run_inference_no_gt()
+#     experiment = CellViTInfExpDetection(
+#         logdir="/work/grana_urologia/MONKEY_challenge/source/sota_architectures/CellViT-plus-plus/model_test/2025-02-08T145641_cellvit++ sam-h finetuning",  # clf needs to be in the path: "logdir/checkpoints/model_best.pth"
+#         cellvit_path="/work/grana_urologia/MONKEY_challenge/source/sota_architectures/CellViT-plus-plus/checkpoints/SAM/CellViT-SAM-H-x40-AMP.pth",
+#         dataset_path="/work/grana_urologia/MONKEY_challenge/data/monkey_inference_test",
+#         normalize_stains=False,
+#         gpu="0",
+#         input_shape=(256, 256),
+#     )
+#     experiment.run_inference()
