@@ -1,10 +1,13 @@
 import json
+import os
+import re
 import xml.dom.minidom
 import xml.etree.ElementTree as ET
 
 import numpy as np
 from scipy.spatial import KDTree
 from shapely.geometry import Point, Polygon
+from tqdm import tqdm
 
 
 # Function to parse dot annotations (monocytes, lymphocytes)
@@ -204,18 +207,110 @@ def save_final_asap_xml(xml_path, new_annotations, output_path):
     tree.write(output_path, encoding="utf-8", xml_declaration=True)
 
 
-# Set file paths for MONKEY dataset
-xml_input = (
-    "/work/grana_urologia/MONKEY_challenge/data/cell_positions_preds/A_P000001.xml"
-)
-json_input = "/work/grana_urologia/MONKEY_challenge/data/cell_positions_preds/A_P000001_PAS_CPG_cell_detection.json"
-output_xml = "/work/grana_urologia/MONKEY_challenge/data/cell_positions_preds/A_P000001_3class.xml"
+import os
+import re
 
-# Run the processing
-preprocess_xml_with_json(
-    xml_input,
-    json_input,
-    output_xml,
+from tqdm import tqdm
+
+
+def extract_patient_ids(xml_folder):
+    """Extract unique patient IDs from filenames using '_' as a separator, removing .xml."""
+    patient_ids = set()
+
+    for filename in os.listdir(xml_folder):
+        parts = filename.split("_")
+        if len(parts) > 1 and filename.endswith(".xml"):
+            patient_id = "_".join(parts[:2]).replace(
+                ".xml", ""
+            )  # Keep only the first underscore, remove .xml
+            patient_ids.add(patient_id)
+
+    return patient_ids
+
+
+def find_matching_files(patient_ids, xml_folder, json_folder):
+    """Find matching XML and JSON files for each patient ID."""
+    xml_files = {pid: None for pid in patient_ids}
+    json_files = {pid: None for pid in patient_ids}
+
+    for filename in os.listdir(xml_folder):
+        for pid in patient_ids:
+            if pid in filename and filename.endswith(".xml"):
+                xml_files[pid] = os.path.join(xml_folder, filename)
+                break
+
+    for filename in os.listdir(json_folder):
+        for pid in patient_ids:
+            if (
+                filename.startswith(pid)
+                and "cell_detection" in filename
+                and filename.endswith(".json")
+            ):
+                json_files[pid] = os.path.join(json_folder, filename)
+                break
+
+    print(f"Found matching {len(xml_files)} XML files and {len(json_files)} JSON files")
+
+    return xml_files, json_files
+
+
+def process_files(
+    xml_files,
+    json_files,
+    output_folder,
     threshold_microns=5,
     base_mpp=0.24199951445730394,
-)
+):
+    """Process each XML and JSON file pair using preprocess_xml_with_json."""
+    os.makedirs(output_folder, exist_ok=True)
+
+    for pid in tqdm(xml_files.keys(), desc="Processing files"):
+        xml_input = xml_files.get(pid)
+        json_input = json_files.get(pid)
+        output_xml = os.path.join(output_folder, f"{pid}_3class.xml")
+
+        if os.path.exists(output_xml):
+            print(f"Skipping {pid}: Output file already exists")
+            continue
+
+        if xml_input and json_input:
+            preprocess_xml_with_json(
+                xml_input, json_input, output_xml, threshold_microns, base_mpp
+            )
+        else:
+            print(f"Skipping {pid}: Missing file(s)")
+
+
+if __name__ == "__main__":
+    # # Set file paths for MONKEY dataset
+    # xml_input = (
+    #     "/work/grana_urologia/MONKEY_challenge/data/cell_positions_preds/A_P000001.xml"
+    # )
+    # json_input = "/work/grana_urologia/MONKEY_challenge/data/cell_positions_preds/A_P000001_PAS_CPG_cell_detection.json"
+    # output_xml = "/work/grana_urologia/MONKEY_challenge/data/cell_positions_preds/A_P000001_3class.xml"
+
+    # # Run the processing
+    # preprocess_xml_with_json(
+    #     xml_input,
+    #     json_input,
+    #     output_xml,
+    #     threshold_microns=5,
+    #     base_mpp=0.24199951445730394,
+    # )
+
+    # Example usage
+    xml_folder = (
+        "/work/grana_urologia/MONKEY_challenge/data/monkey-data/annotations/xml/"
+    )
+    json_folder = "/work/grana_urologia/MONKEY_challenge/data/cell_positions_preds/"
+    output_folder = "/work/grana_urologia/MONKEY_challenge/data/monkey-data/annotations/xml_3_classes/"
+
+    patient_ids = extract_patient_ids(xml_folder)
+    xml_files, json_files = find_matching_files(patient_ids, xml_folder, json_folder)
+    process_files(
+        xml_files,
+        json_files,
+        output_folder,
+        threshold_microns=5,
+        base_mpp=0.24199951445730394,
+    )

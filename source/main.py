@@ -20,12 +20,12 @@ if __name__ == "__main__":
     # test_torch()
     args, config = get_args_and_config()
 
-    output_dir = "/work/grana_urologia/MONKEY_challenge/data/monkey_cellvit"
+    output_dir = "/work/grana_urologia/MONKEY_challenge/data/monkey_cellvit_3_classes"
     group_to_label = {"monocytes": 0, "lymphocytes": 1, "other": 2}
 
     data_prep = DataPreparator(config)
     data_prep.create_cellvit_dataset_singlerow(
-        output_dir="../data/monkey_cellvit",
+        output_dir=output_dir,
         group_to_label=group_to_label,
         ignore_groups={"ROI"},
         patch_shape=(256, 256, 3),

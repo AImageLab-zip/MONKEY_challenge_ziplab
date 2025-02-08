@@ -68,7 +68,12 @@ echo "========================="
 
 echo "== Running script =="
 
-# Navigate to your source folder
+### merge cell predictions to original xml
+cd /work/grana_urologia/MONKEY_challenge/source/scripts
+
+python merge_cell_preds_to_original_xml.py
+
+## Navigate back to source folder
 cd /work/grana_urologia/MONKEY_challenge/source
 
 # Run your Python script
