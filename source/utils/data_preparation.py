@@ -1,11 +1,20 @@
+import csv
 import glob
-import os
+import math
 
+# At module level, add the following helper function
+import os
+from concurrent.futures import ProcessPoolExecutor, as_completed
+
+import matplotlib.pyplot as plt
+import numpy as np
 import pandas as pd
 import yaml
 from sklearn.model_selection import KFold, StratifiedKFold
 from tqdm import tqdm
+from wholeslidedata.iterators import PatchConfiguration, create_patch_iterator
 
+from .asap_parser import parse_asap_dot_annotations
 from .config_parser import get_args_and_config
 from .dot2polygon import dot2polygon
 from .logger import get_logger
@@ -34,7 +43,11 @@ class DataPreparator:
             return -1  # TODO: implement better error handling
 
         self.dataset_dir = self.dataset_configs.get("path", "../data/monkey-data")
-        self.annotation_dir = os.path.join(self.dataset_dir, "annotations", "xml")
+        self.annotation_dir = os.path.join(
+            self.dataset_dir, "annotations", "xml_3_classes"
+        )  # changed this for 3 classes
+        # self.json_px_dir = os.path.join(self.dataset_dir, "annotations", "json_pixel")
+
         self.annotation_polygon_dirname = self.config.get(
             "annotation_polygon_dir", "annotations_polygon"
         )
@@ -112,7 +125,7 @@ class DataPreparator:
         print("Bounding boxes annotations created successfully.")
         return 0
 
-    def create_dataset_df(self):
+    def create_dataset_df(self, bboxes=True):
         """
         Creates and updates a metadata DataFrame by mapping WSI image files and
         annotation files to corresponding patient IDs.
@@ -133,9 +146,14 @@ class DataPreparator:
         )  # Replace placeholders
 
         # Define directories for annotation and image files
-        wsa_dir = (
-            f"{self.annotation_polygon_dir}" + r"/*_polygon.xml"
-        )  # Annotation files
+        if bboxes:
+            wsa_dir = (
+                f"{self.annotation_polygon_dir}" + r"/*_polygon.xml"
+            )  # Annotation files for bboxes in pixel coordinates
+        else:
+            wsa_dir = (
+                f"{self.annotation_dir}" + r"/*.xml"
+            )  # point annotations in pixel coordinates
         wsi_pas_cpg_dir = os.path.join(
             self.dataset_dir, "images", "pas-cpg"
         )  # PAS_CPG images
@@ -151,8 +169,22 @@ class DataPreparator:
         # List of annotation files
         wsa_list = glob.glob(wsa_dir)
 
+        self.logger.info(f"Found {len(wsa_list)} annotation files.")
+
         # Initialize a progress bar for processing annotation files
         progress_bar = tqdm(wsa_list, desc="Processing WSAs")
+
+        # patient_names = [
+        #     os.path.basename(wsa)
+        #     .split(os.path.basename(wsa_dir).split("*")[1])[0]
+        #     .split("_3class")[0]
+        #     for wsa in wsa_list
+        # ]
+
+        # # remove the unmatched rows with the patient names
+        # self.dataset_df = self.dataset_df[
+        #     self.dataset_df["Slide ID"].isin(patient_names)
+        # ]
 
         # Iterate through each annotation file
         for wsa in progress_bar:
@@ -161,10 +193,20 @@ class DataPreparator:
                 os.path.basename(wsa_dir).split("*")[1]
             )[0]
 
+            if "_3class" in patient_name:
+                # remove the _3class suffix
+                patient_name = patient_name.split("_3class")[0]
+
+            self.logger.debug(patient_name)
+
             # Check if the PAS_CPG image exists for the patient
             pas_cpg_path = os.path.join(wsi_pas_cpg_dir, patient_name + "_PAS_CPG.tif")
             # save the associated ROI mask path
             mask_path = os.path.join(wsi_tissue_mask_dir, patient_name + "_mask.tif")
+
+            self.logger.debug(pas_cpg_path)
+            self.logger.debug(mask_path)
+            self.logger.debug(wsa)
 
             if os.path.isfile(pas_cpg_path):
                 progress_bar.set_description(
@@ -244,7 +286,7 @@ class DataPreparator:
         )
         return dataset_df
 
-    def split_and_save_kfold(self):
+    def split_and_save_kfold(self, save=True):
         """
         Split the data into n folds, save to .yml files with training and validation keys,
         and add fold ID to the dataframe.
@@ -255,6 +297,13 @@ class DataPreparator:
         """
         # Make the output yaml splits directory if not present
         os.makedirs(self.yaml_wsi_wsa_dir, exist_ok=True)
+
+        self.logger.info(
+            f"Making {self.n_folds} splits for a daset of n° {len(self.dataset_df)} istances"
+        )
+        self.dataset_df = self.dataset_df.reset_index(
+            drop=True
+        )  # Reset before splitting
 
         self.fold_yaml_paths_dict = {}
 
@@ -299,14 +348,23 @@ class DataPreparator:
                 self.yaml_wsi_wsa_dir, f"fold_{fold_type}{fold}.yml"
             )
 
-            # Save the fold yaml path to the dictionary
-            self.fold_yaml_paths_dict[fold] = fold_file_path
-
             # Save the fold yaml file
-            with open(fold_file_path, "w") as f:
-                yaml.dump({"training": train_yaml, "validation": validation_yaml}, f)
+            if save:
+                # Save the fold yaml path to the dictionary
+                self.fold_yaml_paths_dict[fold] = fold_file_path
+                with open(fold_file_path, "w") as f:
+                    yaml.dump(
+                        {"training": train_yaml, "validation": validation_yaml}, f
+                    )
 
-            print(f"Fold {fold + 1} saved -> {fold_file_path}")
+                print(f"Fold {fold + 1} saved -> {fold_file_path}")
+
+            else:
+                self.fold_yaml_paths_dict[fold] = {
+                    "training": train_yaml,
+                    "validation": validation_yaml,
+                }
+                print(f"Fold {fold + 1} dict created")
 
         return self.dataset_df, self.fold_yaml_paths_dict
 
@@ -318,49 +376,492 @@ class DataPreparator:
         self.create_bboxes_annots()
 
         # 2. Create and update the dataset dataframe
-        self.create_dataset_df()
+        self.create_dataset_df(
+            bboxes=True
+        )  # create the df using bounding boxes annotations
 
         # 3. Split the data into n folds and save to n .yml files in the specified directory
         dataset_df, folds_paths_dict = self.split_and_save_kfold()
 
         return dataset_df, folds_paths_dict
 
+    def prepare_data_points_annotations(self):
+        # 1. Create the dataset dataframe using points annotations
+        self.create_dataset_df(bboxes=False)
 
-# def folders_to_yml(wsi_dir: str, wsa_dir: str, output_dir: str, output_name: str):
-#     """
-#     Generate a yaml file to be used as WSD dataconfig from a folder of slides and a folder of annotation or mask files.
-#     Assumes files use the same name for both the slides and masks.
-#     """
+        # 2. Split the data into n folds and save to n .yml files in the specified directory
+        dataset_df, folds_paths_dict = self.split_and_save_kfold(save=False)
 
-#     wsa_list = glob.glob(wsa_dir)
+        return dataset_df, folds_paths_dict
 
-#     yaml_dict = {"training": []}
-#     # yaml_dict = {'training': [], 'validation': []}
-#     for wsa in wsa_list:
-#         patient_name = os.path.basename(wsa).split(
-#             os.path.basename(wsa_dir).split("*")[1]
-#         )[0]  # monocytes
-#         #     print(patient_name)
-#         if os.path.isfile(os.path.join(wsi_dir, patient_name + "_PAS_CPG.tif")):
-#             wsi = os.path.join(wsi_dir, patient_name + "_PAS_CPG.tif")
-#             print("match found:    ", patient_name)
-#             yaml_dict["training"].append(
-#                 {"wsa": {"path": str(wsa)}, "wsi": {"path": str(wsi)}}
-#             )
+    def create_cellvit_dataset_singlerow(
+        self,
+        output_dir: str,
+        group_to_label={"monocytes": 0, "lymphocytes": 1},
+        ignore_groups={"ROI"},
+        patch_shape=(1024, 1024, 3),
+        spacings=(0.24199951445730394,),
+        overlap=(0, 0),
+        offset=(0, 0),
+        center=False,
+        cpus=4,
+        shift_x=1,  # Shift each annotation 1 pixel in x-direction inside
+        shift_y=1,  # Shift each annotation 1 pixel in y-direction inside
+    ):
+        """
+        Creates a CellViT-compatible dataset with boundary-clamping and dynamic annotation updates:
 
-#             # # validation if needed
-#             # yaml_dict['validation'].append(
-#             #         {"wsa": {"path": str(wsa)}, "wsi": {"path": str(wsi)}})
+        - If the patch image exists, we skip re-creating it.
+        - If annotation CSV is missing or empty, we parse from XML & create it (otherwise skip).
+        - If a WSI path is missing/invalid, we produce 0 patches but do NOT remove the slide from dataset_df.
+        - If an annotation was missing previously, once it's available, we only fill in the CSV if it doesn't exist or is empty.
 
-#         else:
-#             print("no match found:    ", patient_name)
+        Steps:
+        1) Optionally prepares data points (so you have 'fold_id').
+        2) Creates 'splits/fold_*/train.csv' and 'val.csv' per fold.
+        3) Saves patch images under 'train/images' and CSV annotation under 'train/labels'.
+        4) Skips test/ folder usage (it remains empty).
+        5) Writes label_map.yaml in root output_dir.
+        """
+        import csv
+        import os
 
-#     # make a folder for output
-#     if not (os.path.isdir(output_dir)):
-#         os.mkdir(output_dir)
+        import matplotlib.pyplot as plt
+        import numpy as np
+        from tqdm import tqdm
+        from wholeslidedata.iterators import PatchConfiguration, create_patch_iterator
 
-#     with open(os.path.join(output_dir, output_name), "w") as file:
-#         yaml.safe_dump(yaml_dict, file)
+        from .asap_parser import parse_asap_dot_annotations
+
+        # 1) Ensure we have folds: either from prepare_data_points_annotations() or prior
+        self.prepare_data_points_annotations()  # Generates self.dataset_df with fold_id
+        if "fold_id" not in self.dataset_df.columns:
+            raise ValueError(
+                "No 'fold_id' in dataset_df. Did you run split_and_save_kfold()?"
+            )
+
+        # 2) Create folder structure
+        os.makedirs(output_dir, exist_ok=True)
+        splits_dir = os.path.join(output_dir, "splits")
+        os.makedirs(splits_dir, exist_ok=True)
+
+        train_dir = os.path.join(output_dir, "train")
+        os.makedirs(train_dir, exist_ok=True)
+        train_images_dir = os.path.join(train_dir, "images")
+        os.makedirs(train_images_dir, exist_ok=True)
+        train_labels_dir = os.path.join(train_dir, "labels")
+        os.makedirs(train_labels_dir, exist_ok=True)
+
+        test_dir = os.path.join(output_dir, "test")
+        os.makedirs(test_dir, exist_ok=True)
+        os.makedirs(os.path.join(test_dir, "images"), exist_ok=True)
+        os.makedirs(os.path.join(test_dir, "labels"), exist_ok=True)
+        # (test is empty by design)
+
+        # 3) Prepare CSV writers for each fold
+        unique_folds = sorted(self.dataset_df["fold_id"].unique().astype(int))
+        fold_csv_files = {}
+        for f in unique_folds:
+            fold_dir = os.path.join(splits_dir, f"fold_{f}")
+            os.makedirs(fold_dir, exist_ok=True)
+
+            train_csv_path = os.path.join(fold_dir, "train.csv")
+            val_csv_path = os.path.join(fold_dir, "val.csv")
+
+            f_train = open(train_csv_path, mode="w", newline="")
+            f_val = open(val_csv_path, mode="w", newline="")
+
+            fold_csv_files[f] = {
+                "train_writer": csv.writer(f_train),
+                "val_writer": csv.writer(f_val),
+                "files": (f_train, f_val),
+            }
+
+        # 3.1) (Optional) an 'all.csv' if you want a single listing of all patches from all folds
+        # fold_all_dir = os.path.join(splits_dir, "fold_all")
+        # os.makedirs(fold_all_dir, exist_ok=True)
+        # all_csv_path = os.path.join(fold_all_dir, "all.csv")
+        # f_all = open(all_csv_path, "w", newline="")
+        # all_writer = csv.writer(f_all)
+
+        # 4) PatchConfiguration
+        patch_config = PatchConfiguration(
+            patch_shape=patch_shape,
+            spacings=spacings,
+            overlap=overlap,
+            offset=offset,
+            center=center,
+        )
+        self.logger.info(
+            f"PatchConfiguration: patch_shape={patch_shape}, spacings={spacings}, "
+            f"overlap={overlap}, offset={offset}, center={center}"
+        )
+
+        def clamp(x, y, width, height, sx, sy):
+            """
+            1) Shift x,y by (sx, sy).
+            2) Clamp to [0, width-1], [0, height-1].
+            """
+            x_shifted = max(0, min(x + sx, width - 1))
+            y_shifted = max(0, min(y + sy, height - 1))
+            return x_shifted, y_shifted
+
+        # 5) Main loop over rows in dataset_df
+        rows = self.dataset_df.to_dict("records")
+        pbar = tqdm(rows, desc="Creating CellViT Dataset")
+        for row in pbar:
+            slide_id = row.get("Slide ID")
+            val_fold_id = int(row["fold_id"])
+
+            wsi_path = row.get(self.wsi_col)
+            xml_path = row.get(self.wsa_col)
+            mask_path = row.get("WSI Mask Path")
+
+            # If no WSI => produce zero patches, but we DO NOT remove this from folds
+            if (
+                not wsi_path
+                or not isinstance(wsi_path, str)
+                or not os.path.isfile(wsi_path)
+            ):
+                self.logger.warning(f"[{slide_id}] Missing WSI => 0 patches generated.")
+                # No patch => no lines in fold CSV
+                continue
+
+            # Parse annotation or empty
+            if xml_path and os.path.isfile(xml_path):
+                annotations = parse_asap_dot_annotations(
+                    xml_path=xml_path,
+                    group_to_label=group_to_label,
+                    ignore_groups=ignore_groups,
+                )
+            else:
+                annotations = []
+                self.logger.warning(f"[{slide_id}] No XML => empty annotation list.")
+
+            pbar.set_postfix_str(f"Slide={slide_id}, #Annotations={len(annotations)}")
+
+            # 5.1) Build patch iterator
+            patch_iterator = create_patch_iterator(
+                image_path=wsi_path,
+                mask_path=mask_path
+                if (mask_path and os.path.isfile(mask_path))
+                else None,
+                patch_configuration=patch_config,
+                cpus=cpus,
+                backend="asap",
+            )
+
+            for idx_patch, (patch_data, _, info) in enumerate(patch_iterator):
+                patch_np = patch_data.squeeze().astype(np.uint8)
+                H, W, _ = info["tile_shape"]
+                patch_x = info["x"]
+                patch_y = info["y"]
+
+                patch_basename = f"{slide_id}_{idx_patch}"
+                img_path = os.path.join(train_images_dir, patch_basename + ".png")
+                csv_path = os.path.join(train_labels_dir, patch_basename + ".csv")
+
+                # (A) Skip re-creating the patch image if it exists
+                if not os.path.isfile(img_path):
+                    plt.imsave(img_path, patch_np)
+
+                # (B) If CSV is missing or empty => parse from annotation
+                if (not os.path.isfile(csv_path)) or (os.path.getsize(csv_path) == 0):
+                    patch_anns = []
+                    for x_g, y_g, label_id in annotations:
+                        # local coords
+                        x_local = x_g - patch_x
+                        y_local = y_g - patch_y
+                        if 0 <= x_local < W and 0 <= y_local < H:
+                            # shift/clamp
+                            x_clamped, y_clamped = clamp(
+                                x_local, y_local, W, H, shift_x, shift_y
+                            )
+                            patch_anns.append((x_clamped, y_clamped, label_id))
+
+                    with open(csv_path, mode="w", newline="") as cf:
+                        writer = csv.writer(cf)
+                        for x_l, y_l, lid in patch_anns:
+                            writer.writerow([x_l, y_l, lid])
+
+                # (C) Register the patch in each fold CSV
+                for f in unique_folds:
+                    # If it's the "val" fold for this slide => add to val.csv
+                    # otherwise => train.csv
+                    if f == val_fold_id:
+                        fold_csv_files[f]["val_writer"].writerow([patch_basename])
+                    else:
+                        fold_csv_files[f]["train_writer"].writerow([patch_basename])
+
+                # (D) If using "all.csv", do: all_writer.writerow([patch_basename])
+
+            del patch_iterator
+
+        # 6) Close fold CSV files
+        for f in unique_folds:
+            f_train, f_val = fold_csv_files[f]["files"]
+            f_train.close()
+            f_val.close()
+
+        # # If using all.csv:
+        # f_all.close()
+
+        # 7) Write label_map.yaml
+        if group_to_label:
+            label_map_inverted = {v: k for k, v in group_to_label.items()}
+        else:
+            label_map_inverted = {}
+        label_map_path = os.path.join(output_dir, "label_map.yaml")
+        with open(label_map_path, "w") as f:
+            for label_id in sorted(label_map_inverted.keys()):
+                class_name = label_map_inverted[label_id]
+                f.write(f'{label_id}: "{class_name}"\n')
+
+        self.logger.info(
+            "CellViT dataset creation complete (with boundary clamp + dynamic updates)."
+        )
+        self.logger.info(f"Output directory: {output_dir}")
+        self.logger.info(
+            f"label_map.yaml saved with {len(label_map_inverted)} entries."
+        )
+
+    def create_cellvit_dataset_singlerow_parallel(
+        self,
+        output_dir: str,
+        group_to_label={"monocytes": 0, "lymphocytes": 1},
+        ignore_groups={"ROI"},
+        patch_shape=(1024, 1024, 3),
+        spacings=(0.24199951445730394,),
+        overlap=(0, 0),
+        offset=(0, 0),
+        center=False,
+        n_cpus_global=8,  # global CPU count available
+        shift_x=1,
+        shift_y=1,
+    ):
+        # 1) Ensure folds exist
+        self.prepare_data_points_annotations()
+        if "fold_id" not in self.dataset_df.columns:
+            raise ValueError("No 'fold_id' in dataset_df. Did you run split_and_save_kfold()?")
+
+        # 2) Create folder structure (same as before)
+        os.makedirs(output_dir, exist_ok=True)
+        splits_dir = os.path.join(output_dir, "splits")
+        os.makedirs(splits_dir, exist_ok=True)
+        train_dir = os.path.join(output_dir, "train")
+        os.makedirs(train_dir, exist_ok=True)
+        train_images_dir = os.path.join(train_dir, "images")
+        os.makedirs(train_images_dir, exist_ok=True)
+        train_labels_dir = os.path.join(train_dir, "labels")
+        os.makedirs(train_labels_dir, exist_ok=True)
+        test_dir = os.path.join(output_dir, "test")
+        os.makedirs(test_dir, exist_ok=True)
+        os.makedirs(os.path.join(test_dir, "images"), exist_ok=True)
+        os.makedirs(os.path.join(test_dir, "labels"), exist_ok=True)
+
+        # 3) Prepare CSV writers per fold (same as before)
+        unique_folds = sorted(self.dataset_df["fold_id"].unique().astype(int))
+        fold_csv_files = {}
+        for f in unique_folds:
+            fold_dir = os.path.join(splits_dir, f"fold_{f}")
+            os.makedirs(fold_dir, exist_ok=True)
+            train_csv_path = os.path.join(fold_dir, "train.csv")
+            val_csv_path = os.path.join(fold_dir, "val.csv")
+            f_train = open(train_csv_path, mode="w", newline="")
+            f_val = open(val_csv_path, mode="w", newline="")
+            fold_csv_files[f] = {
+                "train_writer": csv.writer(f_train),
+                "val_writer": csv.writer(f_val),
+                "files": (f_train, f_val),
+            }
+
+        # 4) Prepare patch configuration parameters
+        patch_params = {
+            "patch_shape": patch_shape,
+            "spacings": spacings,
+            "overlap": overlap,
+            "offset": offset,
+            "center": center,
+        }
+        self.logger.info(
+            f"PatchConfiguration: patch_shape={patch_shape}, spacings={spacings}, "
+            f"overlap={overlap}, offset={offset}, center={center}"
+        )
+
+        # 5) Compute worker allocation:
+        rows = self.dataset_df.to_dict("records")
+        n_slides = len(rows)
+        n_workers = min(n_slides, n_cpus_global)  # avoid oversubscription
+        cpus_per_worker = max(1, n_cpus_global // n_workers)
+        self.logger.info(f"Using {n_workers} worker processes with {cpus_per_worker} cpus each.")
+
+        # 6) Process each slide in parallel using ProcessPoolExecutor
+        all_patch_records = []  # holds tuples: (fold, patch_basename, role)
+        with ProcessPoolExecutor(max_workers=n_workers) as executor:
+            futures = [
+                executor.submit(
+                    process_slide_cellvit,
+                    row,
+                    patch_params,
+                    cpus_per_worker,  # assign per-worker cpus here
+                    shift_x,
+                    shift_y,
+                    train_images_dir,
+                    train_labels_dir,
+                    unique_folds,
+                    self.wsi_col,
+                    self.wsa_col,
+                    group_to_label,
+                    ignore_groups,
+                )
+                for row in rows
+            ]
+            for future in tqdm(as_completed(futures), total=len(futures), desc="Processing slides"):
+                try:
+                    patch_records = future.result()
+                    all_patch_records.extend(patch_records)
+                except Exception as e:
+                    self.logger.error(f"Error processing a slide: {e}")
+
+        # 7) Write patch registrations to the fold CSV files
+        for fold, patch_basename, role in all_patch_records:
+            if role == "val":
+                fold_csv_files[fold]["val_writer"].writerow([patch_basename])
+            else:
+                fold_csv_files[fold]["train_writer"].writerow([patch_basename])
+
+        # 8) Close fold CSV files
+        for f in unique_folds:
+            f_train, f_val = fold_csv_files[f]["files"]
+            f_train.close()
+            f_val.close()
+
+        # 9) Write label_map.yaml
+        if group_to_label:
+            label_map_inverted = {v: k for k, v in group_to_label.items()}
+        else:
+            label_map_inverted = {}
+        label_map_path = os.path.join(output_dir, "label_map.yaml")
+        with open(label_map_path, "w") as f:
+            for label_id in sorted(label_map_inverted.keys()):
+                class_name = label_map_inverted[label_id]
+                f.write(f'{label_id}: "{class_name}"\n')
+
+        self.logger.info("CellViT dataset creation complete (with boundary clamp + dynamic updates).")
+        self.logger.info(f"Output directory: {output_dir}")
+        self.logger.info(f"label_map.yaml saved with {len(label_map_inverted)} entries.")
+
+
+
+def process_slide_cellvit(
+    row,
+    patch_params,
+    patch_cpus,
+    shift_x,
+    shift_y,
+    train_images_dir,
+    train_labels_dir,
+    unique_folds,
+    wsi_col,
+    wsa_col,
+    group_to_label,
+    ignore_groups,
+):
+    """
+    Process one slide:
+      - If the WSI is missing, return empty.
+      - Otherwise, create the patch iterator, save patch images (if not already saved),
+        create CSV annotation files (if needed), and for each patch return a list of
+        tuples (fold, patch_basename, role) where role is "train" or "val".
+    """
+
+    # Local helper: clamp coordinates with shift
+    def clamp(x, y, width, height, sx, sy):
+        x_shifted = max(0, min(x + sx, width - 1))
+        y_shifted = max(0, min(y + sy, height - 1))
+        return x_shifted, y_shifted
+
+    slide_id = row.get("Slide ID")
+    try:
+        val_fold_id = int(row.get("fold_id"))
+    except (ValueError, TypeError):
+        # if fold_id is missing or not an int, skip the slide
+        print(f"[{slide_id}] Invalid fold_id, skipping.")
+        return []
+    wsi_path = row.get(wsi_col)
+    xml_path = row.get(wsa_col)
+    mask_path = row.get("WSI Mask Path")
+    results = []  # list of tuples: (fold, patch_basename, role)
+
+    if not wsi_path or not isinstance(wsi_path, str) or not os.path.isfile(wsi_path):
+        print(f"[{slide_id}] Missing WSI => 0 patches generated.")
+        return results
+
+    if xml_path and os.path.isfile(xml_path):
+        annotations = parse_asap_dot_annotations(
+            xml_path=xml_path,
+            group_to_label=group_to_label,
+            ignore_groups=ignore_groups,
+        )
+    else:
+        annotations = []
+        print(f"[{slide_id}] No XML => empty annotation list.")
+
+    # Create the PatchConfiguration from passed parameters
+    patch_config = PatchConfiguration(
+        patch_shape=patch_params["patch_shape"],
+        spacings=patch_params["spacings"],
+        overlap=patch_params["overlap"],
+        offset=patch_params["offset"],
+        center=patch_params["center"],
+    )
+
+    # Create patch iterator; note that patch_cpus is used inside each worker
+    patch_iterator = create_patch_iterator(
+        image_path=wsi_path,
+        mask_path=(mask_path if (mask_path and os.path.isfile(mask_path)) else None),
+        patch_configuration=patch_config,
+        cpus=patch_cpus,
+        backend="asap",
+    )
+
+    for idx_patch, (patch_data, _, info) in enumerate(patch_iterator):
+        patch_np = patch_data.squeeze().astype(np.uint8)
+        H, W, _ = info["tile_shape"]
+        patch_x = info["x"]
+        patch_y = info["y"]
+
+        patch_basename = f"{slide_id}_{idx_patch}"
+        img_path = os.path.join(train_images_dir, patch_basename + ".png")
+        csv_path = os.path.join(train_labels_dir, patch_basename + ".csv")
+
+        # (A) Save patch image if not exists
+        if not os.path.isfile(img_path):
+            plt.imsave(img_path, patch_np)
+
+        # (B) Create patch annotation CSV if missing or empty
+        if not os.path.isfile(csv_path) or os.path.getsize(csv_path) == 0:
+            patch_anns = []
+            for x_g, y_g, label_id in annotations:
+                x_local = x_g - patch_x
+                y_local = y_g - patch_y
+                if 0 <= x_local < W and 0 <= y_local < H:
+                    x_clamped, y_clamped = clamp(
+                        x_local, y_local, W, H, shift_x, shift_y
+                    )
+                    patch_anns.append((x_clamped, y_clamped, label_id))
+            with open(csv_path, mode="w", newline="") as cf:
+                writer = csv.writer(cf)
+                for x_l, y_l, lid in patch_anns:
+                    writer.writerow([x_l, y_l, lid])
+
+        # (C) For each fold, decide if this patch is for training or validation.
+        for f in unique_folds:
+            role = "val" if f == val_fold_id else "train"
+            results.append((f, patch_basename, role))
+    del patch_iterator
+    return results
+
 
 if __name__ == "__main__":
     args, config = get_args_and_config()

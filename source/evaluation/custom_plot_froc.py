@@ -3,7 +3,6 @@ FROC curve plotting function that can be used with metrics.json file that is dow
 Adapted form https://github.com/computationalpathologygroup/evaluation-tools/blob/main/src/cpg_evaluation_tools/plotting/froc.py
 """
 
-import argparse
 import json
 import os.path
 
@@ -258,8 +257,10 @@ def plot_overall_froc(
 
 if __name__ == "__main__":
     # EVAL_THRESHOLDS = (10, 20, 50, 100, 200, 300)
-    input_path = "example_files/metrics_gc.json"
-    output_path = "example_files/"
-    plot_per_file = False
+    input_path = "/work/grana_urologia/MONKEY_challenge/data/eval_test_cellvit/ensemble_final/metrics.json"
+    output_path = (
+        "/work/grana_urologia/MONKEY_challenge/data/eval_test_cellvit/ensemble_final/"
+    )
+    plot_per_file = True
 
     plot_overall_froc(input_path, output_path, plot_per_file)

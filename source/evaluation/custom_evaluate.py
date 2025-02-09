@@ -31,8 +31,8 @@ def eval_metrics(
         json.dump(metrics, f, indent=4)
 
     # pprint(metrics)
-    #print overall froc scores for each cell type
-    
+    # print overall froc scores for each cell type
+
     return metrics
 
 
@@ -46,7 +46,7 @@ def evaluate_predictions(predictions_folder, ground_truth_folder):
 
     # Collect results for each patient
     results = []
-    progress_bar = tqdm(predictions_path.iterdir(), desc="Processing WSIs...")
+    progress_bar = tqdm(predictions_path.iterdir(), desc="Evaluating WSIs...")
     for subfolder in progress_bar:
         if subfolder.is_dir():
             patient_id = subfolder.name  # e.g. "A_P000001"
@@ -167,8 +167,17 @@ def process_patient(patient_id, predictions_path, gt_path):
 # ---------------------------------------------------------------------
 def get_froc_vals(gt_dict, result_dict, radius: int):
     """
-    Computes the Free-Response Receiver Operating Characteristic (FROC)
-    for the provided GT and prediction dicts using monai.
+    Computes the Free-Response Receiver Operating Characteristic (FROC) values for given ground truth and result data.
+    Using https://docs.monai.io/en/0.5.0/_modules/monai/metrics/froc.html
+    Args:
+        gt_dict (dict): Ground truth data containing points and regions of interest (ROIs).
+        result_dict (dict): Result data containing detected points and their probabilities.
+        radius (int): The maximum distance in pixels for considering a detection as a true positive.
+
+    Returns:
+        dict: A dictionary containing FROC metrics such as sensitivity, false positives per mm²,
+              true positive probabilities, false positive probabilities, total positives,
+              area in mm², and FROC score.
     """
     if len(result_dict["points"]) == 0:
         return {
@@ -211,7 +220,23 @@ def get_froc_vals(gt_dict, result_dict, radius: int):
 
 
 def match_coordinates(ground_truth, predictions, pred_prob, margin):
-    """Matches predicted coords to ground-truth within `margin` distance."""
+    """
+    Matches predicted coordinates to ground truth coordinates within a certain distance margin
+    and computes the associated probabilities for true positives and false positives.
+
+    Args:
+        ground_truth (list of tuples): List of ground truth coordinates as (x, y).
+        predictions (list of tuples): List of predicted coordinates as (x, y).
+        pred_prob (list of floats): List of probabilities associated with each predicted coordinate.
+        margin (float): The maximum distance for considering a prediction as a true positive.
+
+    Returns:
+        true_positives (int): Number of correctly matched predictions.
+        false_negatives (int): Number of ground truth coordinates not matched by any prediction.
+        false_positives (int): Number of predicted coordinates not matched by any ground truth.
+        tp_probs (list of floats): Probabilities of the true positive predictions.
+        fp_probs (list of floats): Probabilities of the false positive predictions.
+    """
     if len(ground_truth) == 0 and len(predictions) == 0:
         return 0, 0, 0, np.array([]), np.array([])
 
@@ -359,3 +384,12 @@ def convert_mm_to_pixel(data_dict, spacing=SPACING_LEVEL0):
 def mm_to_pixel(dist, spacing=SPACING_LEVEL0):
     spacing_px = spacing / 1000
     return int(round(dist / spacing_px))
+
+
+if __name__ == "__main__":
+    # Example usage
+    eval_metrics(
+        predictions_folder="/work/grana_urologia/MONKEY_challenge/data/eval_test_cellvit/ensemble_final/",
+        ground_truth_folder="/work/grana_urologia/MONKEY_challenge/data/monkey-data/annotations/json_mm",
+        save_path="/work/grana_urologia/MONKEY_challenge/data/eval_test_cellvit/ensemble_final/",
+    )

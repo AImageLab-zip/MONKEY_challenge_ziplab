@@ -1,7 +1,15 @@
 # Created by https://www.toptal.com/developers/gitignore/api/python,visualstudiocode,jupyternotebooks
 # Edit at https://www.toptal.com/developers/gitignore?templates=python,visualstudiocode,jupyternotebooks
 
-## Env
+## Env and files
+
+*.pth
+*.pt
+*.tif
+*.tiff
+*.pkl
+*.npy
+*.npz
 
 monkey_env/*
 monkey_env
@@ -15,7 +23,7 @@ asap/*
 asap
 
 ## Custom folders
-
+temp/*
 data/*
 models/*
 logs/*
@@ -24,6 +32,12 @@ data_debug/images/*
 inference-docker-debug/example_model/*
 inference-docker-debug/test/*
 challenge_example_code/*
+
+
+#temp source folder architectures repositories
+
+source/sota_architectures/*
+
 
 #tar gz files
 *.tar.gz
