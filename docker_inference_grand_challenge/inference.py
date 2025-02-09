@@ -352,7 +352,6 @@ def run():
         model_path=external_model_path,
         dataset_path=dataset_path,
         roi_mask_path=mask_path,
-        roi_mask_path=mask_path,
         normalize_stains=False,
         gpu=GPU,
         input_shape=INPUT_SHAPE_2D,
