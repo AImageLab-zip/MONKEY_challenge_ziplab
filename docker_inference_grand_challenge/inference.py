@@ -247,6 +247,7 @@ def run():
     INPUT_PATH = Path("/input")
     OUTPUT_PATH = Path("/output")
     MODEL_PATH = Path("/opt/ml/model")
+    RESOURCES_PATH = Path("resources")
 
     # Ensure directories exist
     OUTPUT_PATH.mkdir(parents=True, exist_ok=True)
