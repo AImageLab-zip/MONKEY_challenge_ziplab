@@ -2,6 +2,7 @@
 # -*- coding: utf-8 -*-
 import importlib.util
 import os
+import re
 import subprocess
 import uuid
 from glob import glob
@@ -212,7 +213,7 @@ def check_environment():
 # Set constants for WSI info and patch extraction
 MPP_LEVEL0_VALUE = 0.24199951445730394
 FILTERING_THRESHOLD = (
-    3.0  # threshold im micrometers to filter out eventual overlapping detections
+    3.5  # threshold im micrometers to filter out eventual overlapping detections
 )
 PROB_THRESHOLD = 0.5  # threshold for filtering out low probability detections
 INPUT_SHAPE_2D = (256, 256)
@@ -231,6 +232,9 @@ def run():
 
     # Set GPU
     GPU = 0
+
+    # Set number of models to use in ensemble
+    N_MODELS = 5
 
     # Set CPU count
     CPUS = max(1, os.cpu_count() - 1)
@@ -262,41 +266,50 @@ def run():
         RESOURCES_PATH, "backbones", "VIT-256", "CellViT-256-x40-AMP.pth"
     )
 
-    # set fallback model path
-    FALLBACK_MODEL_CLF_PATH = os.path.join(
-        RESOURCES_PATH, "models", "model_best_vit.pth"
-    )
+    FALLBACK_ENSEMBLE_BASE_DIR = os.path.join(RESOURCES_PATH, "models", "ensemble")
 
-    # The external model (provided via a mounted volume) is found under MODEL_PATH.
+    # The external modelS (provided via a mounted volume) are found under MODEL_PATH.
     external_models = sorted(MODEL_PATH.glob("*.pth"))
 
-    if not external_models:
-        print(
-            f"No external model checkpoint found in {MODEL_PATH}!\nDefault model will be used..."
+    # Check if exactly 5 external models are provided and all contain "sam" or "vit".
+    if (
+        external_models
+        and len(external_models) == N_MODELS
+        and all(
+            ("sam" in m.name.lower() or "vit" in m.name.lower())
+            for m in external_models
         )
-        external_model_file = "Fallback Model"
-        external_model_path = FALLBACK_MODEL_CLF_PATH
+    ):
+        ensemble_model_paths = external_models
+        print(f"Using ensemble of {N_MODELS} external models:")
+        for m in ensemble_model_paths:
+            print(f"  {m}")
     else:
-        external_model_file = str(external_models[0])
-        print(f"Found external model: {external_model_file}")
-        external_model_path = external_model_file  # Use the full path directly
+        print("Falling back to 5 internal SAM-H finetuned models.")
+        # Fallback: use 5 internal default models (all using SAM-H backbone as fallback)
 
-    if external_model_file == "Fallback Model":
-        print(
-            "No valid external model found. Using fallback classifier model with VIT-256 backbone."
+        # list of paths ending with .pth inside a given folder
+        ensemble_model_paths = sorted(
+            glob(os.path.join(FALLBACK_ENSEMBLE_BASE_DIR, "*.pth"))
         )
+
+    if not ensemble_model_paths:
+        raise FileNotFoundError(
+            "❌ No models found (external or fallback). Please check paths."
+        )
+
+    # Choose the fixed backbone based on the first model's name.
+    first_model_name = Path(ensemble_model_paths[0]).name.lower()
+
+    if "sam" in first_model_name:
+        fixed_backbone_path = SAM_H_BACKBONE_PATH
+    elif "vit" in first_model_name:
         fixed_backbone_path = VIT_256_BACKBONE_PATH
     else:
-        if "sam" in str(external_model_file).lower():
-            print("Using SAM-H backbone")
-            fixed_backbone_path = SAM_H_BACKBONE_PATH
-        elif "vit" in str(external_model_file).lower():
-            print("Using VIT-256 backbone")
-            fixed_backbone_path = VIT_256_BACKBONE_PATH
-        else:
-            print("Unknown model type. Defaulting to VIT-256 backbone.")
-            fixed_backbone_path = VIT_256_BACKBONE_PATH
-            external_model_path = FALLBACK_MODEL_CLF_PATH
+        print("⚠️ Unknown model type, defaulting to SAM-H backbone.")
+        fixed_backbone_path = SAM_H_BACKBONE_PATH
+
+    print(f"Using models: {ensemble_model_paths}")
 
     # set an id for temp files
     temp_id = str(uuid.uuid4())
@@ -349,7 +362,7 @@ def run():
     experiment = CellViTInfExpDetection(
         logdir=logdir,
         cellvit_path=fixed_backbone_path,
-        model_path=external_model_path,
+        model_paths=ensemble_model_paths,
         dataset_path=dataset_path,
         roi_mask_path=mask_path,
         normalize_stains=False,

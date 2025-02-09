@@ -389,7 +389,7 @@ def mm_to_pixel(dist, spacing=SPACING_LEVEL0):
 if __name__ == "__main__":
     # Example usage
     eval_metrics(
-        predictions_folder="/work/grana_urologia/MONKEY_challenge/data/eval_test_cellvit/adjusted_tresh_plus_clf_tresh/",
+        predictions_folder="/work/grana_urologia/MONKEY_challenge/data/eval_test_cellvit/ensemble_final/",
         ground_truth_folder="/work/grana_urologia/MONKEY_challenge/data/monkey-data/annotations/json_mm",
-        save_path="/work/grana_urologia/MONKEY_challenge/data/eval_test_cellvit/adjusted_tresh_plus_clf_tresh/",
+        save_path="/work/grana_urologia/MONKEY_challenge/data/eval_test_cellvit/ensemble_final/",
     )

@@ -418,6 +418,67 @@ def filter_patch_annotations(
     return mon_filtered, lymph_filtered
 
 
+def merge_ensemble_annotations(
+    ensemble_preds: List[dict], merge_distance_px: float = 10
+) -> dict:
+    """
+    Given a list of global cell prediction dictionaries (one per fold), merge them by clustering detections
+    that are within merge_distance_px (in pixel space). For each cluster, majority vote the cell type and
+    average the coordinates and probability.
+
+    Each dictionary in ensemble_preds is expected to have patch names as keys, and values are dictionaries
+    of predicted cells. Each cell entry must include "global_centroid" (a list [x, y]), "type", and optionally
+    "type_prob". The merged result is a dictionary with the same patch keys.
+    """
+    merged = {}
+    # Get the set of all patch names present in any fold.
+    patch_names = set()
+    for pred in ensemble_preds:
+        patch_names.update(pred.keys())
+
+    for patch in patch_names:
+        # Gather all detections for this patch from all folds.
+        all_dets = []  # each element: (x, y, label, prob)
+        for pred in ensemble_preds:
+            if patch in pred:
+                for cell in pred[patch].values():
+                    x, y = cell["global_centroid"]
+                    label = cell["type"]
+                    prob = cell.get("type_prob", 1.0)
+                    all_dets.append((x, y, label, prob))
+        if not all_dets:
+            continue
+
+        # Cluster detections using KDTree on the (x, y) coordinates.
+        coords = np.array([[d[0], d[1]] for d in all_dets])
+        tree = KDTree(coords)
+        used = np.zeros(len(coords), dtype=bool)
+        merged_patch = {}
+        cluster_id = 0
+        for i in range(len(coords)):
+            if used[i]:
+                continue
+            # Get indices of detections within merge_distance_px.
+            indices = tree.query_ball_point(coords[i], r=merge_distance_px)
+            for j in indices:
+                used[j] = True
+            # Merge cluster: average coordinates, average probability, majority vote on label.
+            cluster_coords = np.array([all_dets[j][:2] for j in indices])
+            avg_coord = np.mean(cluster_coords, axis=0).tolist()
+            labels = [all_dets[j][2] for j in indices]
+            majority_label = max(set(labels), key=labels.count)
+            probs = [all_dets[j][3] for j in indices]
+            avg_prob = float(np.mean(probs))
+            merged_patch[cluster_id] = {
+                "global_centroid": avg_coord,
+                "type": majority_label,
+                "type_prob": avg_prob,
+            }
+            cluster_id += 1
+        merged[patch] = merged_patch
+    return merged
+
+
 class CellViTInfExpDetection(CellViTClassifierInferenceExperiment):
     """Inference Experiment for CellViT with a Classifier Head on Detection Data
 
@@ -458,7 +519,7 @@ class CellViTInfExpDetection(CellViTClassifierInferenceExperiment):
         self,
         logdir: Union[Path, str],
         cellvit_path: Union[Path, str],
-        model_path: Union[Path, str],
+        model_paths: List[Union[Path, str]],
         dataset_path: Union[Path, str],
         roi_mask_path: Union[Path, str],
         input_shape: List[int],
@@ -479,15 +540,28 @@ class CellViTInfExpDetection(CellViTClassifierInferenceExperiment):
             Path(output_path) if output_path else None
         )  # Store output path
         self.mpp_value = mpp_value  # Store micrometers per pixel
-        self.thresh_filtering = thresh_filtering  # Store threshold for filtering
+        self.thresh_filtering = (
+            thresh_filtering  # Store threshold for filtering (micrometers)
+        )
         self.prob_threshold = prob_threshold  # store the probability threshold
         self.roi_mask_path = roi_mask_path  # Store ROI mask path
+
+        self.ensemble_model_paths = model_paths  # Store ensemble model paths
+
+        # pixel trheshold for merging cells as one prediction
+        self.pixel_merge_threshold = self.thresh_filtering / self.mpp_value
+
+        assert (
+            len(self.ensemble_model_paths) > 0
+        ), "At least one model path must be provided."
 
         super().__init__(
             logdir=logdir,
             cellvit_path=cellvit_path,
             dataset_path=dataset_path,
-            model_path=model_path,
+            model_path=model_paths[
+                0
+            ],  # use first model for inference for istantiation only
             normalize_stains=normalize_stains,
             gpu=gpu,
             comment=comment,
@@ -735,17 +809,72 @@ class CellViTInfExpDetection(CellViTClassifierInferenceExperiment):
 
         return cell_dict
 
-    def run_inference(self):
-        """Run inference without ground truth, classify cells, convert patch-local predictions
-        to global WSI coordinates, filter predictions using ROI (if available) and distance criteria,
-        then convert filtered annotations from pixels to millimeters and save the JSON results.
+    def merge_cell_predictions(
+        self, list_of_preds: List[dict], merge_distance_px: float = None
+    ) -> dict:
         """
-        extracted_cells = []  # All detected cells
-        image_pred_dict = {}  # Dictionary with all detected cells
+        Merge global cell prediction dictionaries (one per fold) using majority voting.
+        For each patch, collect detections from all folds and cluster those within merge_distance_px.
+        For each cluster, majority vote the cell type and average the coordinates and probability
+        (averaging only the probabilities for detections with the majority type).
+        Returns a merged dictionary with the same structure.
+        """
+        # Use self.pixel_merge_threshold if merge_distance_px not provided.
+        if merge_distance_px is None:
+            merge_distance_px = self.pixel_merge_threshold
+        merged = {}
+        patch_names = set()
+        for pred in list_of_preds:
+            patch_names.update(pred.keys())
+        for patch in patch_names:
+            all_dets = []  # list of (x, y, type, prob)
+            for pred in list_of_preds:
+                if patch in pred:
+                    for cell in pred[patch].values():
+                        x, y = cell["global_centroid"]
+                        cell_type = cell["type"]
+                        prob = cell.get("type_prob", 1.0)
+                        all_dets.append((x, y, cell_type, prob))
+            if not all_dets:
+                continue
+            coords = np.array([[d[0], d[1]] for d in all_dets])
+            tree = KDTree(coords)
+            used = np.zeros(len(coords), dtype=bool)
+            merged_patch = {}
+            cluster_id = 0
+            for i in range(len(coords)):
+                if used[i]:
+                    continue
+                idxs = tree.query_ball_point(coords[i], r=merge_distance_px)
+                for j in idxs:
+                    used[j] = True
+                cluster = [all_dets[j] for j in idxs]
+                avg_coord = np.mean(
+                    np.array([[c[0], c[1]] for c in cluster]), axis=0
+                ).tolist()
+                # Determine majority type.
+                majority_type = max(
+                    set([c[2] for c in cluster]), key=[c[2] for c in cluster].count
+                )
+                # Average only probabilities for detections with the majority type.
+                majority_probs = [c[3] for c in cluster if c[2] == majority_type]
+                avg_prob = float(np.mean(majority_probs)) if majority_probs else 0.0
+                merged_patch[cluster_id] = {
+                    "global_centroid": avg_coord,
+                    "type": majority_type,
+                    "type_prob": avg_prob,
+                }
+                cluster_id += 1
+            merged[patch] = merged_patch
+        return merged
 
-        # Load the postprocessor for cell detection
+    def run_inference_single_fold(self) -> dict:
+        """
+        Run inference for one fold using the current self.model and return the global cell prediction dictionary.
+        """
+        extracted_cells = []
+        image_pred_dict = {}
         postprocessor = DetectionCellPostProcessorCupy(wsi=None, nr_types=6)
-        # Load the dataset for inference on patches
         cellvit_dl = DataLoader(
             self.inference_dataset,
             batch_size=4,
@@ -753,52 +882,38 @@ class CellViTInfExpDetection(CellViTClassifierInferenceExperiment):
             shuffle=False,
             collate_fn=self.inference_dataset.collate_batch,
         )
-
-        # Step 1: Extract cells with CellViT for the patched dataset (GT is empty in test mode)
         with torch.no_grad():
             for i, (images, cell_gt_batch, types_batch, image_names) in tqdm.tqdm(
                 enumerate(cellvit_dl), total=len(cellvit_dl)
-            ):  
-                # extract cells from the batch of patches using the CellViT model backbone
+            ):
                 _, overall_extracted_cells, batch_pred_dict, _, _, _ = (
                     self._get_cellvit_result(
                         images=images,
-                        cell_gt_batch=cell_gt_batch,  # Empty GT in test mode
-                        types_batch=types_batch,  # Dummy values
+                        cell_gt_batch=cell_gt_batch,
+                        types_batch=types_batch,
                         image_names=image_names,
                         postprocessor=postprocessor,
                     )
                 )
-                # update the image_pred_dict with the extracted cells
                 image_pred_dict.update(batch_pred_dict)
-                # append the extracted cells to the overall list
                 extracted_cells.extend(overall_extracted_cells)
-
         if not extracted_cells:
-            self.logger.warning(
-                "[ERROR] No cells detected! Check model weights and input data."
-            )
-            return
-        
-        # Step 2: Classify cells using extracted tokens.
+            self.logger.warning("[ERROR] No cells detected!")
+            return {}
         classification_results = self._get_classifier_result(extracted_cells)
-        classification_results.pop("gt", None)  # No ground truth in test mode
+        classification_results.pop("gt", None)
         classification_results["predictions"] = (
             classification_results["predictions"].numpy().tolist()
         )
         classification_results["probabilities"] = (
             classification_results["probabilities"].numpy().tolist()
         )
-
-        # Step 3: Update cell dictionary with classifier predictions.
         cell_pred_dict = self.update_cell_dict_with_predictions(
             cell_dict=image_pred_dict,
             predictions=np.array(classification_results["predictions"]),
             probabilities=np.array(classification_results["probabilities"]),
             metadata=classification_results["metadata"],
         )
-
-        # Step 4: Convert patch-local cell centroids to global WSI coordinates (in pixels)
         global_cell_pred_dict = {}
         for patch_name, cells in cell_pred_dict.items():
             try:
@@ -814,40 +929,57 @@ class CellViTInfExpDetection(CellViTClassifierInferenceExperiment):
                 global_centroid_px = [x_global_px, y_global_px]
                 if "type" not in cell:
                     self.logger.error(
-                        f"[ERROR] Missing 'type' for cell in patch {patch_name}. Skipping."
+                        f"[ERROR] Missing 'type' in patch {patch_name}. Skipping."
                     )
                     continue
                 cell_cleaned = {
-                    key: (
-                        value.tolist()
-                        if isinstance(value, (np.ndarray, torch.Tensor))
-                        else value
-                    )
-                    for key, value in cell.items()
+                    k: (v.tolist() if isinstance(v, (np.ndarray, torch.Tensor)) else v)
+                    for k, v in cell.items()
                 }
                 cell_cleaned["global_centroid"] = global_centroid_px
                 global_cells[cell_idx] = cell_cleaned
             global_cell_pred_dict[patch_name] = global_cells
+        return global_cell_pred_dict
 
-        # --- NEW STEP: Filter predictions per patch using OpenSlide ROI mask (if available) and KDTree ---
+    def run_inference(self):
+        """
+        If more than one model is provided, run inference for each model (fold) and merge predictions using majority voting.
+        Otherwise, run inference for a single model.
+        Then, apply final ROI/KDTree filtering and convert coordinates to millimeters before saving JSON results.
+        """
+        # If only one model is provided, run single-fold inference.
+        if len(self.ensemble_model_paths) == 1:
+            self.logger.info("Single model provided; running single-fold inference.")
+            global_preds = self.run_inference_single_fold()
+        else:
+            ensemble_preds = []
+            orig_model = self.model
+            for model_path in self.ensemble_model_paths:
+                self.logger.info(f"Running inference for model: {model_path}")
+                fold_model, _ = self._load_model(checkpoint_path=model_path)
+                self.model = fold_model
+                fold_preds = self.run_inference_single_fold()
+                ensemble_preds.append(fold_preds)
+            self.model = orig_model
+            global_preds = self.merge_cell_predictions(ensemble_preds)
+
+        # --- Apply final filtering using ROI and KDTree ---
         roi_slide = None
         if hasattr(self, "roi_mask_path") and self.roi_mask_path is not None:
             try:
                 roi_slide = openslide.OpenSlide(str(self.roi_mask_path))
             except Exception as e:
-                self.logger.error(f"Could not open ROI mask with OpenSlide: {e}")
-                roi_slide = None  # Continue without ROI filtering.
-        # Use the patch size from the inference (assume same as input_shape; note: input_shape is (H, W))
-        patch_size = (self.input_shape[1], self.input_shape[0])  # (width, height)
+                self.logger.error(f"Could not open ROI mask: {e}")
+                roi_slide = None
+        patch_size = (self.input_shape[1], self.input_shape[0])
         monocytes_all_px = []
         lymphocytes_all_px = []
-        # Iterate over each patch and filter its predictions.
-        for patch_name, cells in global_cell_pred_dict.items():
+        for patch_name, cells in global_preds.items():
             try:
                 mon_pts, lymph_pts = filter_patch_annotations(
                     patch_name,
                     cells,
-                    roi_slide,  # If roi_slide is None, ROI filtering is skipped but KDTree filtering still applies.
+                    roi_slide,
                     patch_size,
                     self.mpp_value,
                     threshold_micrometers=self.thresh_filtering,
@@ -857,22 +989,21 @@ class CellViTInfExpDetection(CellViTClassifierInferenceExperiment):
                 lymphocytes_all_px.extend(lymph_pts)
             except Exception as e:
                 self.logger.error(f"Error filtering patch {patch_name}: {e}")
-
         if roi_slide is not None:
-            roi_slide.close()  # Close the OpenSlide object when done.
+            roi_slide.close()
 
-        # --- Convert aggregated pixel coordinates to millimeters ---
-        monocytes_all = []
-        for x_px, y_px, prob in monocytes_all_px:
-            x_mm, y_mm = _convert_coords(x_px, y_px, self.mpp_value, "mm")
-            monocytes_all.append((x_mm, y_mm, prob))
-        lymphocytes_all = []
-        for x_px, y_px, prob in lymphocytes_all_px:
-            x_mm, y_mm = _convert_coords(x_px, y_px, self.mpp_value, "mm")
-            lymphocytes_all.append((x_mm, y_mm, prob))
+        # Convert aggregated pixel coordinates to millimeters.
+        monocytes_all = [
+            (*_convert_coords(x, y, self.mpp_value, "mm"), prob)
+            for x, y, prob in monocytes_all_px
+        ]
+        lymphocytes_all = [
+            (*_convert_coords(x, y, self.mpp_value, "mm"), prob)
+            for x, y, prob in lymphocytes_all_px
+        ]
         inflammatory_all = monocytes_all + lymphocytes_all
 
-        # --- Build annotation JSONs from the aggregated, filtered points ---
+        # Build annotation JSONs.
         inflammatory_dict = _build_annotation_json(
             inflammatory_all, "inflammatory-cells", self.mpp_value
         )
@@ -883,16 +1014,19 @@ class CellViTInfExpDetection(CellViTClassifierInferenceExperiment):
             lymphocytes_all, "lymphocytes", self.mpp_value
         )
 
-        # Step 5: Save JSON files to specified output directory.
         if self.output_path:
             self.output_path.mkdir(parents=True, exist_ok=True)
             save_annotation_json(
-                inflammatory_dict, self.output_path / "detected-inflammatory-cells.json"
+                inflammatory_dict,
+                self.output_path / "detected-inflammatory-cells.json",
             )
             save_annotation_json(
                 monocytes_dict, self.output_path / "detected-monocytes.json"
             )
             save_annotation_json(
-                lymphocytes_dict, self.output_path / "detected-lymphocytes.json"
+                lymphocytes_dict,
+                self.output_path / "detected-lymphocytes.json",
             )
-            self.logger.info(f"[SUCCESS] JSON results saved in {self.output_path}")
+            self.logger.info(
+                f"[SUCCESS] Ensemble JSON results saved in {self.output_path}"
+            )

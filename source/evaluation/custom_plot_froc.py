@@ -257,8 +257,10 @@ def plot_overall_froc(
 
 if __name__ == "__main__":
     # EVAL_THRESHOLDS = (10, 20, 50, 100, 200, 300)
-    input_path = "/work/grana_urologia/MONKEY_challenge/data/eval_test_cellvit/adjusted_tresh_plus_clf_tresh/metrics.json"
-    output_path = "/work/grana_urologia/MONKEY_challenge/data/eval_test_cellvit/adjusted_tresh_plus_clf_tresh/"
+    input_path = "/work/grana_urologia/MONKEY_challenge/data/eval_test_cellvit/ensemble_final/metrics.json"
+    output_path = (
+        "/work/grana_urologia/MONKEY_challenge/data/eval_test_cellvit/ensemble_final/"
+    )
     plot_per_file = True
 
     plot_overall_froc(input_path, output_path, plot_per_file)
