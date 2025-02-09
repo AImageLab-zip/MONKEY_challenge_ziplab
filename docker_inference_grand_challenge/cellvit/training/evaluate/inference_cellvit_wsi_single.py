@@ -16,12 +16,9 @@ sys.path.append(project_root)
 project_root = os.path.dirname(os.path.abspath(project_root))
 sys.path.append(project_root)
 
-import argparse
 import csv
-import glob
 import json
 import os
-import uuid
 from pathlib import Path
 from typing import Callable, Dict, List, Tuple, Union
 
@@ -29,22 +26,12 @@ import albumentations as A
 import cv2
 import matplotlib.pyplot as plt
 import numpy as np
-import pandas as pd
-import pycm
 import torch
 import tqdm
 from albumentations.pytorch import ToTensorV2
 from einops import rearrange
 from matplotlib import pyplot as plt
 from torch.utils.data import DataLoader, Dataset
-from torchmetrics.classification import (
-    AUROC,
-    Accuracy,
-    AveragePrecision,
-    F1Score,
-    Precision,
-    Recall,
-)
 
 # Import patch iterator related classes
 from wholeslidedata.iterators import PatchConfiguration, create_patch_iterator
@@ -55,15 +42,6 @@ from cellvit.training.datasets.detection_dataset import DetectionDataset
 from cellvit.training.evaluate.inference_cellvit_experiment_classifier import (
     CellViTClassifierInferenceExperiment,
 )
-from cellvit.training.evaluate.ocelot_eval_metrics import (
-    _calc_scores,
-    _preprocess_distance_and_confidence,
-)
-from cellvit.training.utils.metrics import (
-    cell_detection_scores,
-    cell_type_detection_scores,
-)
-from cellvit.training.utils.tools import pair_coordinates
 
 # ID -> name map
 CLASS_MAP = {0: "monocytes", 1: "lymphocytes", 2: "other"}
@@ -142,18 +120,18 @@ def create_test_dataset(
         Path: Path to the test dataset folder.
     """
     output_dir = Path(output_dir)
-    train_dir = output_dir / "train"
-    images_train_dir = train_dir / "images"
-    labels_train_dir = train_dir / "labels"
+    train_dir = os.path.join(output_dir, "train")
+    images_train_dir = os.path.join(train_dir, "images")
+    labels_train_dir = os.path.join(train_dir, "labels")
     os.makedirs(images_train_dir, exist_ok=True)
     os.makedirs(labels_train_dir, exist_ok=True)
 
-    splits_dir = output_dir / "splits"
+    splits_dir = os.path.join(output_dir, "splits")
     os.makedirs(splits_dir, exist_ok=True)
 
-    test_dir = output_dir / "test"
-    images_dir = test_dir / "images"
-    labels_dir = test_dir / "labels"
+    test_dir = os.path.join(output_dir, "test")
+    images_dir = os.path.join(test_dir, "images")
+    labels_dir = os.path.join(test_dir, "labels")
     os.makedirs(images_dir, exist_ok=True)
     os.makedirs(labels_dir, exist_ok=True)
 
@@ -192,11 +170,11 @@ def create_test_dataset(
         patch_basename = f"{slide_id}_x{patch_x}_y{patch_y}_{idx_patch}"
 
         # Save the patch image.
-        img_path = images_dir / f"{patch_basename}.png"
+        img_path = os.path.join(images_dir, f"{patch_basename}.png")
         plt.imsave(str(img_path), patch_np)
 
         # Create an empty CSV file for annotations.
-        csv_path = labels_dir / f"{patch_basename}.csv"
+        csv_path = os.path.join(labels_dir, f"{patch_basename}.csv")
         with open(csv_path, mode="w", newline="") as cf:
             writer = csv.writer(cf)
             # (Empty file, as no annotations are available.)
@@ -385,6 +363,7 @@ class CellViTInfExpDetection(CellViTClassifierInferenceExperiment):
         self,
         logdir: Union[Path, str],
         cellvit_path: Union[Path, str],
+        model_path: Union[Path, str],
         dataset_path: Union[Path, str],
         input_shape: List[int],
         normalize_stains: bool = False,
@@ -407,6 +386,7 @@ class CellViTInfExpDetection(CellViTClassifierInferenceExperiment):
             logdir=logdir,
             cellvit_path=cellvit_path,
             dataset_path=dataset_path,
+            model_path=model_path,
             normalize_stains=normalize_stains,
             gpu=gpu,
             comment=comment,
@@ -546,6 +526,8 @@ class CellViTInfExpDetection(CellViTClassifierInferenceExperiment):
         """
         Retrieve CellViT Inference results. Modified to allow empty ground truth.
         """
+
+        print(f"Getting CellViT results for {len(images)} images.")
         extracted_cells_matching = []
         overall_extracted_cells = []
         image_pred_dict = {}
@@ -574,6 +556,9 @@ class CellViTInfExpDetection(CellViTClassifierInferenceExperiment):
             pred_centroids = np.array(pred_centroids)
             # Instead of requiring both GT and predictions, use only predictions.
             if len(pred_centroids) > 0:
+                print(
+                    f"Found in image: {image_name} {len(pred_centroids)} preds cells."
+                )
                 for cell_idx in range(len(pred_centroids)):
                     overall_extracted_cells.append(
                         {
@@ -584,7 +569,7 @@ class CellViTInfExpDetection(CellViTClassifierInferenceExperiment):
                         }
                     )
                     image_pred_dict[image_name][cell_idx + 1] = pred_dict[cell_idx + 1]
-                # (Pairing is skipped when GT is empty; you may optionally add pairing logic.)
+
         return (
             extracted_cells_matching,
             overall_extracted_cells,
@@ -666,18 +651,22 @@ class CellViTInfExpDetection(CellViTClassifierInferenceExperiment):
 
         # Step 1: Extract cells with CellViT (GT is empty in test mode)
         with torch.no_grad():
-            for _, (images, _, _, image_names) in tqdm.tqdm(
+            for i, (images, cell_gt_batch, types_batch, image_names) in tqdm.tqdm(
                 enumerate(cellvit_dl), total=len(cellvit_dl)
             ):
+                print(f"Processing batch {i} - with {len(images)} images.")
+                print(f"Shape of images: {images.shape}")
                 _, overall_extracted_cells, batch_pred_dict, _, _, _ = (
                     self._get_cellvit_result(
                         images=images,
-                        cell_gt_batch=[],  # Empty GT in test mode
-                        types_batch=[],  # Dummy values
+                        cell_gt_batch=cell_gt_batch,  # Empty GT in test mode
+                        types_batch=types_batch,  # Dummy values
                         image_names=image_names,
                         postprocessor=postprocessor,
                     )
                 )
+                # print(batch_pred_dict)
+                # print(overall_extracted_cells)
                 image_pred_dict.update(batch_pred_dict)
                 extracted_cells.extend(overall_extracted_cells)
 

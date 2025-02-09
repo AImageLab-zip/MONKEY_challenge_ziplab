@@ -114,6 +114,7 @@ class CellViTClassifierInferenceExperiment(ABC):
         logdir: Union[Path, str],
         cellvit_path: Union[Path, str],
         dataset_path: Union[Path, str],
+        model_path: Union[Path, str],
         normalize_stains: bool = False,
         gpu: int = 0,
         comment: str = None,
@@ -139,7 +140,7 @@ class CellViTClassifierInferenceExperiment(ABC):
 
         self.logdir = Path(logdir)
         self.comment = comment
-        self.model_path = self.logdir / "checkpoints" / "model_best.pth"
+        self.model_path = Path(model_path)
         self.cellvit_path = Path(cellvit_path)
         self.dataset_path = Path(dataset_path)
         self.normalize_stains = normalize_stains
