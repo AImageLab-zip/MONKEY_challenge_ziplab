@@ -673,7 +673,7 @@ class CellViTInfExpDetection(CellViTClassifierInferenceExperiment):
         # Step 2: Ensure extracted_cells contains data
         if not extracted_cells:
             self.logger.warning(
-                "❌ No cells detected! Check model weights and input data."
+                "[ERROR] No cells detected! Check model weights and input data."
             )
             return
 
@@ -701,7 +701,7 @@ class CellViTInfExpDetection(CellViTClassifierInferenceExperiment):
             try:
                 slide_id, patch_x, patch_y = parse_patch_basename(patch_name)
             except Exception as e:
-                self.logger.error(f"❌ Error parsing patch name {patch_name}: {e}")
+                self.logger.error(f"[ERROR] Error parsing patch name {patch_name}: {e}")
                 continue
 
             global_cells = {}
@@ -716,7 +716,7 @@ class CellViTInfExpDetection(CellViTClassifierInferenceExperiment):
                 # Ensure required fields exist
                 if "type" not in cell:
                     self.logger.error(
-                        f"❌ Missing 'type' for cell in patch {patch_name}. Skipping."
+                        f"[ERROR] Missing 'type' for cell in patch {patch_name}. Skipping."
                     )
                     continue
 
@@ -756,7 +756,7 @@ class CellViTInfExpDetection(CellViTClassifierInferenceExperiment):
             save_annotation_json(
                 lymphocytes_dict, self.output_path / "detected-lymphocytes.json"
             )
-            self.logger.info(f"✅ JSON results saved in {self.output_path}")
+            self.logger.info(f"[SUCCESS] JSON results saved in {self.output_path}")
 
 
 # if __name__ == "__main__":
