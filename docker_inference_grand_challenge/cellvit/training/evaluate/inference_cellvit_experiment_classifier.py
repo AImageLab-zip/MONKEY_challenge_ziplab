@@ -669,12 +669,12 @@ class CellViTClassifierInferenceExperiment(ABC):
                 classifier_output["gt"].append(cell_types)
                 classifier_output["metadata"] = classifier_output["metadata"] + meta
 
-        from pprint import pprint
+        # from pprint import pprint
 
-        print("Length of classifier output")
-        print(len(classifier_output))
-        print("Classifier output")
-        pprint(classifier_output)
+        # print("Length of classifier output")
+        # print(len(classifier_output))
+        # print("Classifier output")
+        # pprint(classifier_output)
 
         # classifier_output["predictions"] = (
         #     torch.cat(classifier_output["predictions"], dim=0).detach().cpu()

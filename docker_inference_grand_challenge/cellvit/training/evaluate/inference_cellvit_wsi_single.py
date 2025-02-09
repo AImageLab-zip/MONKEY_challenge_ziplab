@@ -527,7 +527,7 @@ class CellViTInfExpDetection(CellViTClassifierInferenceExperiment):
         Retrieve CellViT Inference results. Modified to allow empty ground truth.
         """
 
-        print(f"Getting CellViT results for {len(images)} images.")
+        # print(f"Getting CellViT results for {len(images)} images.")
         extracted_cells_matching = []
         overall_extracted_cells = []
         image_pred_dict = {}
@@ -556,9 +556,9 @@ class CellViTInfExpDetection(CellViTClassifierInferenceExperiment):
             pred_centroids = np.array(pred_centroids)
             # Instead of requiring both GT and predictions, use only predictions.
             if len(pred_centroids) > 0:
-                print(
-                    f"Found in image: {image_name} {len(pred_centroids)} preds cells."
-                )
+                # print(
+                #     f"Found in image: {image_name} {len(pred_centroids)} preds cells."
+                # )
                 for cell_idx in range(len(pred_centroids)):
                     overall_extracted_cells.append(
                         {
@@ -654,8 +654,8 @@ class CellViTInfExpDetection(CellViTClassifierInferenceExperiment):
             for i, (images, cell_gt_batch, types_batch, image_names) in tqdm.tqdm(
                 enumerate(cellvit_dl), total=len(cellvit_dl)
             ):
-                print(f"Processing batch {i} - with {len(images)} images.")
-                print(f"Shape of images: {images.shape}")
+                # print(f"Processing batch {i} - with {len(images)} images.")
+                # print(f"Shape of images: {images.shape}")
                 _, overall_extracted_cells, batch_pred_dict, _, _, _ = (
                     self._get_cellvit_result(
                         images=images,

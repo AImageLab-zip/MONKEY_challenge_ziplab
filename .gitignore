@@ -1,7 +1,7 @@
 # Created by https://www.toptal.com/developers/gitignore/api/python,visualstudiocode,jupyternotebooks
 # Edit at https://www.toptal.com/developers/gitignore?templates=python,visualstudiocode,jupyternotebooks
 
-## Env
+## Env and files
 
 *.pth
 *.pt
@@ -23,7 +23,7 @@ asap/*
 asap
 
 ## Custom folders
-
+temp/*
 data/*
 models/*
 logs/*
