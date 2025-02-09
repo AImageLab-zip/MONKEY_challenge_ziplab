@@ -240,14 +240,14 @@ def run():
     CPUS = max(1, os.cpu_count() - 1)
 
     # # NOTE: The following lines are used to simulate the input and output paths in the Docker container
-    INPUT_PATH = Path("test")  # Simulated /input
-    OUTPUT_PATH = Path("test_output")  # Simulated /output
-    MODEL_PATH = Path("example_model")  # Simulated /opt/ml/model
+    # INPUT_PATH = Path("test")  # Simulated /input
+    # OUTPUT_PATH = Path("test_output")  # Simulated /output
+    # MODEL_PATH = Path("example_model")  # Simulated /opt/ml/model
 
     # #NOTE: Uncomment the following lines and comment the above lines to use the actual paths in the Docker container
-    # INPUT_PATH = Path("/input")
-    # OUTPUT_PATH = Path("/output")
-    # MODEL_PATH = Path("/opt/ml/model")
+    INPUT_PATH = Path("/input")
+    OUTPUT_PATH = Path("/output")
+    MODEL_PATH = Path("/opt/ml/model")
 
     # Resources folder path (included in the Docker image: includes backbones and models)
     RESOURCES_PATH = Path("resources")  # Simulated resources (internal folder)
