@@ -27,13 +27,11 @@ import cv2
 import matplotlib.pyplot as plt
 import numpy as np
 import openslide
-import openslide
 import torch
 import tqdm
 from albumentations.pytorch import ToTensorV2
 from einops import rearrange
 from matplotlib import pyplot as plt
-from scipy.spatial import KDTree
 from scipy.spatial import KDTree
 from torch.utils.data import DataLoader, Dataset
 
@@ -470,7 +468,7 @@ class CellViTInfExpDetection(CellViTClassifierInferenceExperiment):
         output_path: Union[Path, str] = None,  # Added output path argument
         mpp_value: float = 0.24199951445730394,  # Added micrometers per pixel
         thresh_filtering: float = 5.0,  # Added threshold (in micrometers) for filtering
-        prob_threshold: float = 0.5,  # new probability threshold
+        prob_threshold: float = 0.0,  # new probability threshold
     ) -> None:
         assert len(input_shape) == 2, "Input shape must have a length of 2."
         for in_sh in input_shape:
@@ -745,7 +743,9 @@ class CellViTInfExpDetection(CellViTClassifierInferenceExperiment):
         extracted_cells = []  # All detected cells
         image_pred_dict = {}  # Dictionary with all detected cells
 
+        # Load the postprocessor for cell detection
         postprocessor = DetectionCellPostProcessorCupy(wsi=None, nr_types=6)
+        # Load the dataset for inference on patches
         cellvit_dl = DataLoader(
             self.inference_dataset,
             batch_size=4,
@@ -754,11 +754,12 @@ class CellViTInfExpDetection(CellViTClassifierInferenceExperiment):
             collate_fn=self.inference_dataset.collate_batch,
         )
 
-        # Step 1: Extract cells with CellViT (GT is empty in test mode)
+        # Step 1: Extract cells with CellViT for the patched dataset (GT is empty in test mode)
         with torch.no_grad():
             for i, (images, cell_gt_batch, types_batch, image_names) in tqdm.tqdm(
                 enumerate(cellvit_dl), total=len(cellvit_dl)
-            ):
+            ):  
+                # extract cells from the batch of patches using the CellViT model backbone
                 _, overall_extracted_cells, batch_pred_dict, _, _, _ = (
                     self._get_cellvit_result(
                         images=images,
@@ -768,7 +769,9 @@ class CellViTInfExpDetection(CellViTClassifierInferenceExperiment):
                         postprocessor=postprocessor,
                     )
                 )
+                # update the image_pred_dict with the extracted cells
                 image_pred_dict.update(batch_pred_dict)
+                # append the extracted cells to the overall list
                 extracted_cells.extend(overall_extracted_cells)
 
         if not extracted_cells:
@@ -776,7 +779,7 @@ class CellViTInfExpDetection(CellViTClassifierInferenceExperiment):
                 "[ERROR] No cells detected! Check model weights and input data."
             )
             return
-
+        
         # Step 2: Classify cells using extracted tokens.
         classification_results = self._get_classifier_result(extracted_cells)
         classification_results.pop("gt", None)  # No ground truth in test mode
