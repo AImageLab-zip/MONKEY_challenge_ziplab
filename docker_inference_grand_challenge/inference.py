@@ -3,7 +3,6 @@
 import importlib.util
 import os
 import subprocess
-import time
 import uuid
 from glob import glob
 from pathlib import Path
@@ -78,11 +77,6 @@ monkey_ascii_art = """##########################################################
 ################+..##+..##+.-######-....+######..+###-..####+.-###..-####......#######..+###########
 ####################################################################################################
 ####################################################################################################"""
-
-
-import importlib.util
-import subprocess
-import time
 
 
 def check_module(module_name):
@@ -217,6 +211,9 @@ def check_environment():
 
 # Set constants for WSI info and patch extraction
 MPP_LEVEL0_VALUE = 0.24199951445730394
+FILTERING_THRESHOLD = (
+    3.0  # threshold im micrometers to filter out eventual overlapping detections
+)
 INPUT_SHAPE_2D = (256, 256)
 INPUT_SHAPE_3D = (256, 256, 3)
 SPACINGS = (0.25,)
@@ -237,17 +234,18 @@ def run():
     # Set CPU count
     CPUS = max(1, os.cpu_count() - 1)
 
-    # # NOTE: The following lines are used to simulate the input and output paths in the Docker container
+    # NOTE: The following lines are used to simulate the input and output paths in the Docker container by using python directly instead
     # INPUT_PATH = Path("test")  # Simulated /input
     # OUTPUT_PATH = Path("test_output")  # Simulated /output
     # MODEL_PATH = Path("example_model")  # Simulated /opt/ml/model
-    # RESOURCES_PATH = Path("resources")  # Simulated /opt/ml/resources
 
     #NOTE: Uncomment the following lines and comment the above lines to use the actual paths in the Docker container
     INPUT_PATH = Path("/input")
     OUTPUT_PATH = Path("/output")
     MODEL_PATH = Path("/opt/ml/model")
-    RESOURCES_PATH = Path("resources")
+
+    # Resources folder path (included in the Docker image: includes backbones and models)
+    RESOURCES_PATH = Path("resources")  # Simulated resources (internal folder)
 
     # Ensure directories exist
     OUTPUT_PATH.mkdir(parents=True, exist_ok=True)
@@ -352,11 +350,13 @@ def run():
         cellvit_path=fixed_backbone_path,
         model_path=external_model_path,
         dataset_path=dataset_path,
+        roi_mask_path=mask_path,
         normalize_stains=False,
         gpu=GPU,
         input_shape=INPUT_SHAPE_2D,
         output_path=OUTPUT_PATH,
         mpp_value=MPP_LEVEL0_VALUE,
+        thresh_filtering=FILTERING_THRESHOLD,
     )
 
     print("Running inference...")
