@@ -12,14 +12,16 @@ RUN apt-get update && apt-get install -y \
     software-properties-common \
     openslide-tools libopenslide0 \
     build-essential libffi-dev libxml2-dev libjpeg-turbo8-dev zlib1g-dev \
- && apt-get clean
+    && apt-get clean
 
 # Install Miniconda into /opt/conda
 ENV CONDA_DIR=/opt/conda
-RUN wget --quiet https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh -O /tmp/miniconda.sh && \
+RUN apt-get update && apt-get install -y wget && \
+    wget --quiet https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh -O /tmp/miniconda.sh && \
     /bin/bash /tmp/miniconda.sh -b -p $CONDA_DIR && \
     rm /tmp/miniconda.sh && \
-    $CONDA_DIR/bin/conda clean -a -y
+    $CONDA_DIR/bin/conda clean -a -y && \
+    apt-get remove -y wget && apt-get autoremove -y && apt-get clean
 
 # Add Conda to PATH
 ENV PATH=$CONDA_DIR/bin:$PATH
@@ -46,7 +48,7 @@ RUN pip install --no-cache-dir -r /opt/app/requirements.txt && \
     pip install torch==2.2.2 torchvision==0.17.2 torchaudio==2.2.2 --index-url https://download.pytorch.org/whl/cu121
 
 # Install ASAP for Whole Slide Imaging (note: using ASAP 2.2 for Ubuntu 22.04)
-RUN wget --quiet https://github.com/computationalpathologygroup/ASAP/releases/download/ASAP-2.2-(Nightly)/ASAP-2.2-Ubuntu2204.deb && \
+RUN wget --quiet 'https://github.com/computationalpathologygroup/ASAP/releases/download/ASAP-2.2-(Nightly)/ASAP-2.2-Ubuntu2204.deb' && \
     dpkg --install ASAP-2.2-Ubuntu2204.deb || true && \
     apt-get -f install --fix-missing --fix-broken --assume-yes && \
     ldconfig -v && \
@@ -65,8 +67,6 @@ USER user
 
 # Copy project files
 COPY --chown=user:user cellvit /opt/app/cellvit
-COPY --chown=user:user model_and_info /opt/app/model_and_info
-COPY --chown=user:user backbone /opt/app/backbone
 COPY --chown=user:user resources /opt/app/resources
 COPY --chown=user:user inference.py /opt/app/inference.py
 
