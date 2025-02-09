@@ -27,11 +27,13 @@ import cv2
 import matplotlib.pyplot as plt
 import numpy as np
 import openslide
+import openslide
 import torch
 import tqdm
 from albumentations.pytorch import ToTensorV2
 from einops import rearrange
 from matplotlib import pyplot as plt
+from scipy.spatial import KDTree
 from scipy.spatial import KDTree
 from torch.utils.data import DataLoader, Dataset
 
