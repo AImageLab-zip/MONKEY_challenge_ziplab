@@ -26,11 +26,13 @@ import albumentations as A
 import cv2
 import matplotlib.pyplot as plt
 import numpy as np
+import openslide
 import torch
 import tqdm
 from albumentations.pytorch import ToTensorV2
 from einops import rearrange
 from matplotlib import pyplot as plt
+from scipy.spatial import KDTree
 from torch.utils.data import DataLoader, Dataset
 
 # Import patch iterator related classes
@@ -323,6 +325,99 @@ def save_annotation_json(annotation_dict: dict, filepath: Path) -> None:
         json.dump(annotation_dict, f, indent=2)
 
 
+def filter_patch_annotations(
+    patch_name: str,
+    cells: dict,
+    roi_slide: Union[openslide.OpenSlide, None],
+    patch_size: Tuple[int, int],
+    mpp_value: float,
+    threshold_micrometers: float = 7.5,
+    prob_threshold: float = 0.0,  # New parameter: skip cells with lower probability
+) -> Tuple[List[Tuple[float, float, float]], List[Tuple[float, float, float]]]:
+    """
+    For a given patch (identified by patch_name) and its cell predictions (cells),
+    optionally load the ROI mask region corresponding to the patch using OpenSlide
+    (if roi_slide is provided) and then filter out:
+      (a) Cells that fall outside the ROI (if the ROI mask is available).
+      (b) Cells that are closer together than threshold_micrometers (using pixel distances).
+      (c) Cells with a probability lower than prob_threshold.
+
+    The global centroids in cells are in WSI pixels.
+    The threshold (in micrometers) is converted to a pixel threshold using mpp_value.
+    Returns two lists (for monocytes [type 0] and lymphocytes [type 1]) of points,
+    where each point is a tuple (x_px, y_px, probability) in pixel coordinates.
+    """
+    # Parse patch name to obtain patch coordinates.
+    slide_id, patch_x, patch_y = parse_patch_basename(patch_name)
+    patch_x = int(patch_x)
+    patch_y = int(patch_y)
+
+    # If a valid ROI mask is available, read only the corresponding region.
+    if roi_slide is not None:
+        region = roi_slide.read_region((patch_x, patch_y), 0, patch_size)
+        region = np.array(region.convert("L"))
+    else:
+        region = None
+
+    monocytes_points = []
+    lymphocytes_points = []
+    # Process each cell in this patch.
+    for cell in cells.values():
+        # Get the global centroid (in pixels)
+        global_centroid = cell.get("global_centroid", [0, 0])
+        gx = int(global_centroid[0])
+        gy = int(global_centroid[1])
+        # Convert to patch-local coordinates.
+        local_x = gx - patch_x
+        local_y = gy - patch_y
+        if region is not None:
+            # Skip cell if its local coordinate is outside the patch or in a masked-out area.
+            if (
+                local_x < 0
+                or local_x >= patch_size[0]
+                or local_y < 0
+                or local_y >= patch_size[1]
+            ):
+                continue
+            if region[local_y, local_x] == 0:
+                continue
+        prob = cell.get("type_prob", 1.0)
+        # Skip low-confidence predictions.
+        if prob < prob_threshold:
+            continue
+        cell_type = cell.get("type", 2)
+        if cell_type == 0:
+            monocytes_points.append((gx, gy, prob))
+        elif cell_type == 1:
+            lymphocytes_points.append((gx, gy, prob))
+
+    # KDTree-based filtering in pixel space.
+    def kdtree_filter(
+        points_list: List[Tuple[float, float, float]],
+    ) -> List[Tuple[float, float, float]]:
+        if not points_list:
+            return []
+        pts = np.array([[p[0], p[1]] for p in points_list])
+        # Convert threshold from micrometers to pixels.
+        threshold_px = threshold_micrometers / mpp_value
+        tree = KDTree(pts)
+        sorted_indices = np.argsort(pts[:, 0])
+        kept = []
+        visited = np.zeros(len(pts), dtype=bool)
+        for i in sorted_indices:
+            if visited[i]:
+                continue
+            neighbors = tree.query_ball_point(pts[i], r=threshold_px)
+            for j in neighbors:
+                visited[j] = True
+            kept.append(points_list[i])
+        return kept
+
+    mon_filtered = kdtree_filter(monocytes_points)
+    lymph_filtered = kdtree_filter(lymphocytes_points)
+    return mon_filtered, lymph_filtered
+
+
 class CellViTInfExpDetection(CellViTClassifierInferenceExperiment):
     """Inference Experiment for CellViT with a Classifier Head on Detection Data
 
@@ -365,12 +460,15 @@ class CellViTInfExpDetection(CellViTClassifierInferenceExperiment):
         cellvit_path: Union[Path, str],
         model_path: Union[Path, str],
         dataset_path: Union[Path, str],
+        roi_mask_path: Union[Path, str],
         input_shape: List[int],
         normalize_stains: bool = False,
         gpu: int = 0,
         comment: str = None,
         output_path: Union[Path, str] = None,  # Added output path argument
         mpp_value: float = 0.24199951445730394,  # Added micrometers per pixel
+        thresh_filtering: float = 5.0,  # Added threshold (in micrometers) for filtering
+        prob_threshold: float = 0.5,  # new probability threshold
     ) -> None:
         assert len(input_shape) == 2, "Input shape must have a length of 2."
         for in_sh in input_shape:
@@ -381,6 +479,9 @@ class CellViTInfExpDetection(CellViTClassifierInferenceExperiment):
             Path(output_path) if output_path else None
         )  # Store output path
         self.mpp_value = mpp_value  # Store micrometers per pixel
+        self.thresh_filtering = thresh_filtering  # Store threshold for filtering
+        self.prob_threshold = prob_threshold  # store the probability threshold
+        self.roi_mask_path = roi_mask_path  # Store ROI mask path
 
         super().__init__(
             logdir=logdir,
@@ -635,8 +736,10 @@ class CellViTInfExpDetection(CellViTClassifierInferenceExperiment):
         return cell_dict
 
     def run_inference(self):
-        """Run inference without ground truth, classify cells, convert patch-local predictions to global WSI coordinates, and save only the JSON results."""
-
+        """Run inference without ground truth, classify cells, convert patch-local predictions
+        to global WSI coordinates, filter predictions using ROI (if available) and distance criteria,
+        then convert filtered annotations from pixels to millimeters and save the JSON results.
+        """
         extracted_cells = []  # All detected cells
         image_pred_dict = {}  # Dictionary with all detected cells
 
@@ -654,8 +757,6 @@ class CellViTInfExpDetection(CellViTClassifierInferenceExperiment):
             for i, (images, cell_gt_batch, types_batch, image_names) in tqdm.tqdm(
                 enumerate(cellvit_dl), total=len(cellvit_dl)
             ):
-                # print(f"Processing batch {i} - with {len(images)} images.")
-                # print(f"Shape of images: {images.shape}")
                 _, overall_extracted_cells, batch_pred_dict, _, _, _ = (
                     self._get_cellvit_result(
                         images=images,
@@ -665,19 +766,16 @@ class CellViTInfExpDetection(CellViTClassifierInferenceExperiment):
                         postprocessor=postprocessor,
                     )
                 )
-                # print(batch_pred_dict)
-                # print(overall_extracted_cells)
                 image_pred_dict.update(batch_pred_dict)
                 extracted_cells.extend(overall_extracted_cells)
 
-        # Step 2: Ensure extracted_cells contains data
         if not extracted_cells:
             self.logger.warning(
                 "[ERROR] No cells detected! Check model weights and input data."
             )
             return
 
-        # Step 3: Classify cells using extracted tokens
+        # Step 2: Classify cells using extracted tokens.
         classification_results = self._get_classifier_result(extracted_cells)
         classification_results.pop("gt", None)  # No ground truth in test mode
         classification_results["predictions"] = (
@@ -687,7 +785,7 @@ class CellViTInfExpDetection(CellViTClassifierInferenceExperiment):
             classification_results["probabilities"].numpy().tolist()
         )
 
-        # Step 4: Update cell dictionary with classifier predictions
+        # Step 3: Update cell dictionary with classifier predictions.
         cell_pred_dict = self.update_cell_dict_with_predictions(
             cell_dict=image_pred_dict,
             predictions=np.array(classification_results["predictions"]),
@@ -695,7 +793,7 @@ class CellViTInfExpDetection(CellViTClassifierInferenceExperiment):
             metadata=classification_results["metadata"],
         )
 
-        # Step 5: Convert patch-local cell centroids to global WSI coordinates (in mm)
+        # Step 4: Convert patch-local cell centroids to global WSI coordinates (in pixels)
         global_cell_pred_dict = {}
         for patch_name, cells in cell_pred_dict.items():
             try:
@@ -703,24 +801,17 @@ class CellViTInfExpDetection(CellViTClassifierInferenceExperiment):
             except Exception as e:
                 self.logger.error(f"[ERROR] Error parsing patch name {patch_name}: {e}")
                 continue
-
             global_cells = {}
             for cell_idx, cell in cells.items():
                 local_centroid = cell.get("centroid", [0, 0])
-
-                # Compute global coordinates
                 x_global_px = local_centroid[0] + patch_x
                 y_global_px = local_centroid[1] + patch_y
                 global_centroid_px = [x_global_px, y_global_px]
-
-                # Ensure required fields exist
                 if "type" not in cell:
                     self.logger.error(
                         f"[ERROR] Missing 'type' for cell in patch {patch_name}. Skipping."
                     )
                     continue
-
-                # Convert to JSON serializable format
                 cell_cleaned = {
                     key: (
                         value.tolist()
@@ -731,20 +822,63 @@ class CellViTInfExpDetection(CellViTClassifierInferenceExperiment):
                 }
                 cell_cleaned["global_centroid"] = global_centroid_px
                 global_cells[cell_idx] = cell_cleaned
-
             global_cell_pred_dict[patch_name] = global_cells
 
-        # Step 6: Generate annotation JSONs for monocytes, lymphocytes, and inflammatory cells
-        inflammatory_dict, monocytes_dict, lymphocytes_dict = (
-            generate_inflammatory_annotation_dicts(
-                global_cell_pred_dict,
-                micrometers_per_pixel=self.mpp_value,  # Now using class variable
-                output_unit="mm",
-                fixed_z_value=self.mpp_value,
-            )
+        # --- NEW STEP: Filter predictions per patch using OpenSlide ROI mask (if available) and KDTree ---
+        roi_slide = None
+        if hasattr(self, "roi_mask_path") and self.roi_mask_path is not None:
+            try:
+                roi_slide = openslide.OpenSlide(str(self.roi_mask_path))
+            except Exception as e:
+                self.logger.error(f"Could not open ROI mask with OpenSlide: {e}")
+                roi_slide = None  # Continue without ROI filtering.
+        # Use the patch size from the inference (assume same as input_shape; note: input_shape is (H, W))
+        patch_size = (self.input_shape[1], self.input_shape[0])  # (width, height)
+        monocytes_all_px = []
+        lymphocytes_all_px = []
+        # Iterate over each patch and filter its predictions.
+        for patch_name, cells in global_cell_pred_dict.items():
+            try:
+                mon_pts, lymph_pts = filter_patch_annotations(
+                    patch_name,
+                    cells,
+                    roi_slide,  # If roi_slide is None, ROI filtering is skipped but KDTree filtering still applies.
+                    patch_size,
+                    self.mpp_value,
+                    threshold_micrometers=self.thresh_filtering,
+                    prob_threshold=self.prob_threshold,
+                )
+                monocytes_all_px.extend(mon_pts)
+                lymphocytes_all_px.extend(lymph_pts)
+            except Exception as e:
+                self.logger.error(f"Error filtering patch {patch_name}: {e}")
+
+        if roi_slide is not None:
+            roi_slide.close()  # Close the OpenSlide object when done.
+
+        # --- Convert aggregated pixel coordinates to millimeters ---
+        monocytes_all = []
+        for x_px, y_px, prob in monocytes_all_px:
+            x_mm, y_mm = _convert_coords(x_px, y_px, self.mpp_value, "mm")
+            monocytes_all.append((x_mm, y_mm, prob))
+        lymphocytes_all = []
+        for x_px, y_px, prob in lymphocytes_all_px:
+            x_mm, y_mm = _convert_coords(x_px, y_px, self.mpp_value, "mm")
+            lymphocytes_all.append((x_mm, y_mm, prob))
+        inflammatory_all = monocytes_all + lymphocytes_all
+
+        # --- Build annotation JSONs from the aggregated, filtered points ---
+        inflammatory_dict = _build_annotation_json(
+            inflammatory_all, "inflammatory-cells", self.mpp_value
+        )
+        monocytes_dict = _build_annotation_json(
+            monocytes_all, "monocytes", self.mpp_value
+        )
+        lymphocytes_dict = _build_annotation_json(
+            lymphocytes_all, "lymphocytes", self.mpp_value
         )
 
-        # Step 7: Save JSON files to specified output directory
+        # Step 5: Save JSON files to specified output directory.
         if self.output_path:
             self.output_path.mkdir(parents=True, exist_ok=True)
             save_annotation_json(
@@ -757,30 +891,3 @@ class CellViTInfExpDetection(CellViTClassifierInferenceExperiment):
                 lymphocytes_dict, self.output_path / "detected-lymphocytes.json"
             )
             self.logger.info(f"[SUCCESS] JSON results saved in {self.output_path}")
-
-
-# if __name__ == "__main__":
-#     # configuration_parser = CellViTInfExpDetectionParser()
-#     # configuration = configuration_parser.parse_arguments()
-
-#     create_test_dataset(
-#         wsi_path="/work/grana_urologia/MONKEY_challenge/source/sota_architectures/test_data/A_P000001_PAS_CPG.tif",
-#         mask_path="/work/grana_urologia/MONKEY_challenge/data/monkey-data/images/tissue-masks/A_P000001_mask.tif",
-#         output_dir="/work/grana_urologia/MONKEY_challenge/data/monkey_inference_test",
-#         patch_shape=(256, 256, 3),
-#         spacings=(0.25,),
-#         overlap=(0, 0),
-#         offset=(0, 0),
-#         center=False,
-#         cpus=4,
-#     )
-
-#     experiment = CellViTInfExpDetection(
-#         logdir="/work/grana_urologia/MONKEY_challenge/source/sota_architectures/CellViT-plus-plus/model_test/2025-02-08T145641_cellvit++ sam-h finetuning",  # clf needs to be in the path: "logdir/checkpoints/model_best.pth"
-#         cellvit_path="/work/grana_urologia/MONKEY_challenge/source/sota_architectures/CellViT-plus-plus/checkpoints/SAM/CellViT-SAM-H-x40-AMP.pth",
-#         dataset_path="/work/grana_urologia/MONKEY_challenge/data/monkey_inference_test",
-#         normalize_stains=False,
-#         gpu="0",
-#         input_shape=(256, 256),
-#     )
-#     experiment.run_inference()
