@@ -35,206 +35,65 @@ The challenge comprises two primary tasks:
 1. **Detection of Mononuclear Inflammatory Cells (MNLs):** Identifying mononuclear leukocytes in biopsy images.
 2. **Classification of Inflammatory Cells:** Distinguishing between monocytes and lymphocytes within the detected cells.
 
-### Timeline
+## Solution Description
 
-The challenge is structured into three phases:
+> [!NOTE]  
+> We are currently writing the documentation for this repository as it is not yet complete. 
+> Thank you for your patience.
+>
 
-1. **Debugging Phase (August–December 2024):** Participants develop and debug their Docker containers with access to debugging logs.
-2. **Live Leaderboard Phase (August–November 2024):** Teams submit their models for evaluation on a validation set, with results displayed on a live leaderboard.
-3. **Final Test Phase (December 2024):** Final submissions are evaluated on a test set to determine the winners.
+# **Architecture and Inference Pipeline**
 
-An open submission cycle will follow, allowing ongoing participation and submissions for up to five years.
+Our approach is based on the state-of-the-art **CellViT-plus-plus** framework, which leverages a pre-trained foundational model backbone for **nuclei detection, segmentation, and classification** in whole slide images (WSIs). We enhance the system by fine-tuning a **multi-layer perceptron (MLP) classifier** to assign one of three classes to every detected nucleus: **monocytes, lymphocytes, and an additional "other" class**. The "other" class is generated semi-automatically using the **CellViT SAM-H model**, augmenting the training dataset for the **MONKEY challenge**.
 
-### Dataset
+---
 
-The dataset includes [PAS-stained WSI](#pas-stained-wsi) of kidneys, which is a common staining method for this tissue. Different types of scans are available for the same slide:
+## **Detection and Classification Workflow**
 
-- **CGP scan**
-- **Diagnostic Scan**
-- **Original Scan**
-- **IHC (Immunohistochemistry) scan**: Used as annotation reference.
+### **1. WSI Patchification**
+- We create a **custom patchified dataset** from the input WSI using the **Whole Slide Data** library.
+- The patches and their associated **region-of-interest (ROI) masks** are stored in a temporary folder.
+- This step ensures efficient processing of extremely large WSIs.
 
-Pathologists annotated on the IHC scans, marking the positions (x, y coordinates) of lymphocytes and monocytes within [ROIs (Regions of Interest)](#roi---region-of-interest-in-the-kidney-wsis).
+### **2. Nuclei Detection and Embedding Extraction**
+- The **pre-trained CellViT-plus-plus backbone** is used to **detect nuclei** in the patches.
+- The model also extracts high-quality **feature embeddings** for each detected nucleus.
 
-#### Available Data
+### **3. MLP Classifier Fine-tuning**
+- A **multi-layer perceptron (MLP) classifier** is fine-tuned on a custom dataset composed of **extracted nuclei embeddings**.
+- Since the foundational model detects all nuclei, we generate a **third annotated class ("other")** using **CellViT SAM-H**.
+- This additional class improves classifier robustness on the **MONKEY challenge dataset**.
 
-![Available Data](media/images/dataset_splits.png)
+---
 
-- Not every type of scan is available for every center.
-- An Excel file provides detailed information.
-- Annotations include immune cells' coordinates and ROI masks in TIFF files.
+## **Inference with Ensemble or Single Model**
+At inference time, we support **two modes**:
 
+### **1. Ensemble Inference**
+- Each of the **5-fold models** runs independently on the **patchified dataset**.
+- **Global cell prediction dictionaries** from each model are merged using a **KDTree-based clustering strategy**.
+- Within each cluster:
+  - **Majority voting** determines the final predicted class.
+  - **Averaged probabilities** (only from agreeing predictions) reduce variance.
 
+### **2. Single Model Inference**
+- If only one model is provided, the pipeline runs **without ensemble merging**.
 
-#### Dataset Details
+## **Postprocessing**
 
-The training set contains **81 cases**. For each case, the following information is available:
+### **1. ROI Filtering**
+- Only **predictions inside the tissue region** (defined by the WSI mask) are retained.
 
-#### WSI Data
+### **2. Overlapping Detections**
+- **KDTree-based deduplication** removes overlapping predictions within a **specified radius**.
 
-- **PAS slide scanned with "CPG profile"** using a P1000 WSI scanner (3DHistech) at Radboudumc.
-- **PAS slide scanned with "diagnostic profile"** using a P1000 WSI scanner (3DHistech) at Radboudumc.
-- **PAS slide scanned at the source institution** (available for Vienna and Mayo only).
-- **IHC slide**: Double-stained for monocytes (PU.1 antibody, red) and lymphocytes (CD3/CD20 antibody, brown), used to guide the annotation process.
+### **3. Coordinate Conversion**
+- Using the **base microns-per-pixel (MPP) resolution**, final **pixel coordinates** are converted to **millimeters**.
 
-All slides are co-registered and available in TIFF format at a spacing of 0.24 µm/pixel.
+## **Annotation Generation**
+- The final, filtered detections are parsed into **three JSON files**, corresponding to the three required classes.
+- These JSON files serve as the **final output for evaluation**.
 
-#### Annotation Data
 
-- **XML files** containing coordinates of annotations and ROI polygons.
-- **JSON files** in the same format as the output.
-- **Binary masks** of the ROIs in TIFF format.
-
-#### Data Information
-
-- annotations:
-Dot annotations of the monocytes and lymphocytes (collectively inflammatory cells) in the grand-challenge json format as well as in xml format (which can be loaded in ASAP).
-
-- images/tissue-masks:
-Tissue masks for the region (polygon) of interests as a binary tif file.
-
-- images/pas-cpg:
-Scanned tif of the PAS WSI using the CPG scanning profile at Radboud. The annotations are made on these files, and all other tif images are registered to them.
-
-- images/pas-diagnostic:
-Scanned tif of the PAS WSI using the Diagnostic scanning profile at Radboud.
-
-- images/pas-original:
-Tif of the PAS WSI scanned at the center of origin.
-
-- images/ihc:
-Will be uploaded asap. Contains the IHC double stains for the monocytes (red) and lymphocytes (brown).
-
-- context-information.xlsx:
-Overview of the data quality, naming, diagnosis and other information (see sheet "explanations").
-
-#### Folder structure
-
-    ├── ReadMe.txt
-    ├── annotations/
-    │   ├── json/
-    │   │   ├── A_P000001_inflammatory-cells.json
-    │   │   ├── A_P000001_monocytes.json
-    │   │   ├── A_P000001_lymphocytes.json
-    │   │   ├── A_P000002_inflammatory-cells.json
-    │   │   └── (...).json
-    │   └── xml/
-    │       ├── A_P000001.xml
-    │       ├── A_P000002.xml
-    │       └── (...).xml
-    ├── images/
-    │   ├── tissue-masks/
-    │   │   ├── A_P000001_tissue-mask.tif
-    │   │   ├── A_P000002_tissue-mask.tif
-    │   │   └── (...).tif
-    │   ├── pas-cpg/
-    │   │   ├── A_P000001_PAS_CPG.tif
-    │   │   ├── A_P000001_PAS_CPG.tif
-    │   │   └── (...).tif
-    │   ├── pas-diagnostic/
-    │   │   ├── A_P000001_PAS_Diagnostic.tif
-    │   │   ├── A_P000001_PAS_Diagnostic.tif
-    │   │   └── (...).tif
-    │   ├── pas-original/
-    │   │   ├── A_P000001_PAS_Original.tif
-    │   │   ├── A_P000001_PAS_Original.tif
-    │   │   └── (...).tif
-    │   └── ihc/
-    │       ├── A_P000001_IHC_CPG.tif
-    │       ├── A_P000001_IHC_CPG.tif
-    │       └── (...).tif
-    └── metadata/
-        └── context-information.xlsx
-
-### Submission
-
-Participants must submit Docker containers encapsulating their algorithms. Submissions are evaluated using Free Response Operating Characteristic (FROC) analysis, focusing on sensitivity at predefined false positive rates.
-
-### Evaluation & Ranking
-
-The primary evaluation metric is the FROC score, calculated by assessing sensitivity at specific false positive rates per square millimeter. Separate FROC scores are computed for:
-
-- Overall inflammation cell detection (MNLs).
-- Individual detection of monocytes and lymphocytes.
-
-Detailed evaluation scripts are available on the challenge's GitHub repository.
-
-## Rules
-
-### Participation
-
-- All participants must form [teams](https://monkey.grand-challenge.org/teams/), even if composed of a single participant.
-- Each participant can only be a member of one team.
-- Anonymous participation is not allowed. Participants must have verified Grand Challenge profiles with accurate names and affiliations.
-- Members of sponsoring or organizing centers may participate in the challenge.
-- Only fully automated methods in Docker containers are supported. Semi-automated or interactive methods are not allowed.
-- All Docker containers submitted will be run in an offline setting (no internet access). All necessary resources must be included beforehand.
-- Participants and their AI algorithms must adhere to compute limits. Participants are responsible for ensuring their algorithm runtime fits within these limits.
-- Organizers reserve the right to disqualify any participant or team for unfair or dishonest practices.
-- Participants can withdraw from the challenge but cannot retract prior submissions or published results.
-
-### Training Data, Models, and Code
-
-- **External data and pre-trained models** are allowed if they are freely and publicly available under a permissive open-source license.
-- The use of external data must be clearly stated in the submission, algorithm name, algorithm page, and/or supporting publication/URL.
-- The participating team's code (for training and inference) and model weights must be available on GitHub (or similar) with a permissive open-source license.
-
-### Publication
-
-- Up to three members of each leaderboard's top three performing teams will be invited to participate in the challenge paper as consortium authors.
-- Participants are encouraged to submit their solution as a short paper at MIDL 2025.
-- Participants and non-participating researchers using the dataset can publish their results separately at any time.
-- All submitted algorithms will be publicly available as Grand Challenge Algorithms.
-- Any publication using this dataset must cite the [Structured Challenge Report](https://zenodo.org/records/13794656).
-
-
-### References
-
-For more detailed information, visit the [MONKEY challenge website](https://monkey.grand-challenge.org/).
-
-## How To: Tutorial and Baseline
-
-### Grand Challenge Workflow
-
-Participants develop their algorithms, which are run in Docker containers on Grand Challenge. The evaluation is performed on the outputs produced, and FROC scores are obtained.
-
-### Code Tutorial on GitHub
-
-The baseline algorithm and tutorials are available on [GitHub](https://github.com/computationalpathologygroup/monkey-challenge).
-
-The provided notebooks include:
-
-1. **Data Preparation**
-2. **Batch Iterator and Training**
-3. **Inference Using Mask**
-
-Participants need to wrap their code into a Docker container for submission to Grand Challenge.
-
-### Docker Submission Steps
-
-- **test_run.sh**: Test locally on a Docker container to debug.
-- **save.sh**: Generate the ZIP file of the Docker container for upload.
-- **Algorithm Creation on Grand Challenge**: Define INPUT and OUTPUT for the algorithm.
-- **Container Upload**: Upload the Docker ZIP file and model ZIP (tar.gz) to Grand Challenge.
-- **Submission**: Select the algorithm in the submission section and submit.
-
-**Note**: For the live leaderboard, there are no logs available, only the final output.
-
-## Metrics and Model Validartion
-
-### Validation Data
-
-- **9 PAS-stained WSIs** with CGP scans from Center E are used for evaluation on ROIs only.
-- The official metric is the **Free-Response ROC (FROC) curve**.
-- The score is computed as the **average of the FROC score** at five pre-selected FP/mm² scales: `10, 20, 50, 100, 200, 300`.
-
-> [!WARNING]  
-> Only the PAS WSI scanned with the CPG profile will be used during the validation and test phase.
-
-### FROC score
-
-The FROC (Free-Response ROC) curve plots the true positive rate (TPR) on the y-axis against the average number of false positives (FP) per mm² on the x-axis. It is an alternative to the ROC curve, where the x-axis plots the false positive rate.
-
-The score is computed as the average of the TPR at predefined FP/mm² scales.
-
-The official metric for the challenge is the average FROC score at FP/mm² scales of `10, 20, 50, 100, 200, 300`.
+### Example of semi-automatic Annotation using the CellVit SAM-H backbone
+![example_3_classes](./media/images/third_class_cellvit_automatic_annotation_comparison.png)

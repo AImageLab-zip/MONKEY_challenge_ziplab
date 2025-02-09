@@ -37,6 +37,3 @@ if __name__ == "__main__":
         center=False,
         n_cpus_global=int(os.environ.get("SLURM_CPUS_PER_TASK", 16)),
     )
-    # experiment = BaselineDetectronExperiment(args, config)
-    # experiment.train()
-    # experiment.test()
