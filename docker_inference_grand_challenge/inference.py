@@ -302,6 +302,7 @@ def run():
     temp_id = str(uuid.uuid4())
     # Set a temp directory path with the unique id
     temp_dir_path = os.path.join(RESOURCES_PATH, "temp", temp_id)
+    os.makedirs(temp_dir_path, exist_ok=True)
     # Set a logdir in the temp directory
     logdir = os.path.join(temp_dir_path, "logs")
     # Set a dataset path in the temp directory
