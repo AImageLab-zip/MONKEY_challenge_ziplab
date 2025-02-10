@@ -1,16 +1,5 @@
 # UNIMORE AImageLab Zip MONKEY Challenge Solution
 
-## Installation
-
-To run the code in the simplest way, you need anaconda/conda installed.
-Simply run the script `install_conda_env.sh`
-
-    bash install_conda_env.sh
-
-If you want to develop locally with VSCode you can use the .devcontainer files to make a docker with the exact os, libraries, etc..
-See how in the [devcontainers VSCode documentation](https://code.visualstudio.com/docs/devcontainers/containers).
-
-
 ## Overview of the MONKEY Challenge: Detection of Inflammation in Kidney Biopsies
 
 The MONKEY (Machine-learning for Optimal detection of iNflammatory cells in the KidnEY) challenge aims to develop automated methods for detecting and classifying inflammatory cells in kidney transplant biopsies. This initiative seeks to enhance the consistency and efficiency of histopathological assessments, particularly in the context of the Banff classification system.
@@ -35,14 +24,12 @@ The challenge comprises two primary tasks:
 1. **Detection of Mononuclear Inflammatory Cells (MNLs):** Identifying mononuclear leukocytes in biopsy images.
 2. **Classification of Inflammatory Cells:** Distinguishing between monocytes and lymphocytes within the detected cells.
 
-## Solution Description
+# **Architecture and Inference Pipeline**
 
 > [!NOTE]  
 > We are currently writing the documentation for this repository as it is not yet complete. 
 > Thank you for your patience.
 >
-
-# **Architecture and Inference Pipeline**
 
 Our approach is based on the state-of-the-art **[CellViT-plus-plus](https://github.com/TIO-IKIM/CellViT-plus-plus)** framework, which leverages a pre-trained foundational model backbone for **nuclei detection, segmentation, and classification** in whole slide images (WSIs). We enhance the system by fine-tuning a **multi-layer perceptron (MLP) classifier** to assign one of three classes to every detected nucleus: **monocytes, lymphocytes, and an additional "other" class**. The "other" class is generated semi-automatically using the **CellViT SAM-H model**, augmenting the training dataset for the **MONKEY challenge**.
 
