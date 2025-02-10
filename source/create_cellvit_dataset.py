@@ -1,31 +1,23 @@
-# from experiments.BaselineDetectronExperiment import BaselineDetectronExperiment
 import os
 
 from utils.config_parser import get_args_and_config
 from utils.data_preparation import DataPreparator
 
 
-def test_torch():
-    """
-    Test if torch is installed and working with GPU
-    """
-    import torch
-
-    print(torch.__version__)
-    print(torch.cuda.is_available())
-    print("It's working!")
-
-
 if __name__ == "__main__":
-    # test_torch()
+    # Parse arguments and config
     args, config = get_args_and_config()
 
+    #specify the output directory and the mapping of the groups to the labels
     output_dir = (
         "/work/grana_urologia/MONKEY_challenge/data/monkey_cellvit_3_cls_parallel"
     )
     group_to_label = {"monocytes": 0, "lymphocytes": 1, "other": 2}
 
     data_prep = DataPreparator(config)
+    
+    #create a CellVit plus plus finetune compatible dataset with the specified parameters
+    
     data_prep.create_cellvit_dataset_singlerow_parallel(
         output_dir=output_dir,
         group_to_label=group_to_label,
