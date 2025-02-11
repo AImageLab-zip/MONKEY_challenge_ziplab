@@ -1,3 +1,12 @@
+REPOSITORY LICENSE
+
+This repository is licensed under **Apache 2.0 with Commons Clause**.  
+- You may **use, modify, and distribute** this software under the terms of Apache 2.0.  
+- **Commercial use is prohibited** as per the Commons Clause.  
+- Any use of **CellViT++** requires proper citation:  
+  - Hörst, F., et al. (2024). *CellViT: Vision Transformers for precise cell segmentation and classification*. Medical Image Analysis, 94, 103143. [DOI:10.1016/j.media.2024.103143](https://doi.org/10.1016/j.media.2024.103143)
+  - Hörst, F., et al. (2025). *CellViT++: Energy-Efficient and Adaptive Cell Segmentation and Classification Using Foundation Models*. arXiv. [DOI:10.48550/ARXIV.2501.05269](https://doi.org/10.48550/ARXIV.2501.05269)
+
 VIT256 LICENSE
 
 “Commons Clause” License Condition v1.0
