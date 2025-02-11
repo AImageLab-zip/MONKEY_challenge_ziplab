@@ -87,24 +87,27 @@ At inference time, we support **two modes**:
 ### Example of semi-automatic Annotation using the CellVit SAM-H backbone
 ![example_3_classes](./media/images/third_class_cellvit_automatic_annotation_comparison.png)
 
-## Licensing Information
+## Acknowledgments and Citations
 
-This project incorporates multiple software components, each governed by specific licenses:
+This repository makes use of multiple frameworks and models developed by external research teams. We acknowledge their contributions and provide citations for the works that influenced this project.
 
-### **VIT256 License**
-- **License:** Apache 2.0 with Commons Clause
-- **Licensor:** Mahmood Lab
-- **Restriction:** Commercial use prohibited under the **Commons Clause**.
+### **Referenced Works**
 
-### **SAM License**
-- **License:** Apache 2.0
-- **Permissions:** Commercial use, modifications, distribution, and patent use allowed.
-- **Conditions:** Includes copyright and documentation of changes.
+- **CellViT & CellViT++**
+  - Hörst, F., et al. (2024). *CellViT: Vision Transformers for precise cell segmentation and classification*. Medical Image Analysis, 94, 103143.  
+    [DOI:10.1016/j.media.2024.103143](https://doi.org/10.1016/j.media.2024.103143)
+  - Hörst, F., et al. (2025). *CellViT++: Energy-Efficient and Adaptive Cell Segmentation and Classification Using Foundation Models*. arXiv.  
+    [DOI:10.48550/ARXIV.2501.05269](https://doi.org/10.48550/ARXIV.2501.05269)
 
-### **CellViT++ License**
-- **License:** Apache 2.0 with Commons Clause
-- **Licensor:** Fabian Hörst, Jens Kleesiek
-- **Restriction:** Commercial use prohibited under the **Commons Clause**.
-- **Citation Requirement:** If using this software, cite the following works:
-  - Hörst, F., et al. (2024). *CellViT: Vision Transformers for precise cell segmentation and classification*. Medical Image Analysis, 94, 103143. [DOI:10.1016/j.media.2024.103143](https://doi.org/10.1016/j.media.2024.103143)
-  - Hörst, F., et al. (2025). *CellViT++: Energy-Efficient and Adaptive Cell Segmentation and Classification Using Foundation Models*. arXiv. [DOI:10.48550/ARXIV.2501.05269](https://doi.org/10.48550/ARXIV.2501.05269)
+- **VIT256 & HIPT**
+  - Mahmood Lab. *HIPT: Hierarchical Image Pyramid Transformer for Histopathology*.  
+    Licensed under **Apache 2.0 with Commons Clause**.  
+    [Source Repository](https://github.com/mahmoodlab/HIPT)
+
+- **Segment Anything Model (SAM)**
+  - Kirillov, A., et al. (2023). *Segment Anything*. Meta AI Research.  
+    Licensed under **Apache 2.0**.  
+    [Source Repository](https://github.com/facebookresearch/segment-anything)
+
+These works have significantly contributed to the development of our approach in the MONKEY Challenge. If you use this repository, please ensure proper attribution to these sources.
+
