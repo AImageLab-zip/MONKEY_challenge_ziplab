@@ -1,4 +1,6 @@
-# UNIMORE AImageLab Zip MONKEY Challenge Solution
+# UNIMORE AImageLab Zip MONKEY Challenge Solution - ImmunoZip
+
+![ImmunoZip Logo](media/images/ImmunoZip_logo_complete_resized.png)
 
 ## Overview of the MONKEY Challenge: Detection of Inflammation in Kidney Biopsies
 
