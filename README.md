@@ -84,3 +84,25 @@ At inference time, we support **two modes**:
 
 ### Example of semi-automatic Annotation using the CellVit SAM-H backbone
 ![example_3_classes](./media/images/third_class_cellvit_automatic_annotation_comparison.png)
+
+## Licensing Information
+
+This project incorporates multiple software components, each governed by specific licenses:
+
+### **VIT256 License**
+- **License:** Apache 2.0 with Commons Clause
+- **Licensor:** Mahmood Lab
+- **Restriction:** Commercial use prohibited under the **Commons Clause**.
+
+### **SAM License**
+- **License:** Apache 2.0
+- **Permissions:** Commercial use, modifications, distribution, and patent use allowed.
+- **Conditions:** Includes copyright and documentation of changes.
+
+### **CellViT++ License**
+- **License:** Apache 2.0 with Commons Clause
+- **Licensor:** Fabian Hörst, Jens Kleesiek
+- **Restriction:** Commercial use prohibited under the **Commons Clause**.
+- **Citation Requirement:** If using this software, cite the following works:
+  - Hörst, F., et al. (2024). *CellViT: Vision Transformers for precise cell segmentation and classification*. Medical Image Analysis, 94, 103143. [DOI:10.1016/j.media.2024.103143](https://doi.org/10.1016/j.media.2024.103143)
+  - Hörst, F., et al. (2025). *CellViT++: Energy-Efficient and Adaptive Cell Segmentation and Classification Using Foundation Models*. arXiv. [DOI:10.48550/ARXIV.2501.05269](https://doi.org/10.48550/ARXIV.2501.05269)
