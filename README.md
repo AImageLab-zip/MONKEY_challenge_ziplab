@@ -28,7 +28,18 @@ The challenge comprises two primary tasks:
 
 # Installation & Inference
 
+## ⚠️ Important
+
 **To test inference with our pretrained models, included in this repo, we highly suggest you use docker**. In this way you will create a docker container as in the challenge that will be tested with a **single** input WSI `.tif` file and the corresponding tissue mask `.tif` file.
+
+## System Requirements
+
+**We recommend a machine using UNIX/LINUX with at least 32 GB of RAM, an NVIDIA CUDA compatible GPU with 16 GB minimum and 60 GB or more of free disk space.**
+
+We installed CUDA 12.1, and used both an HPC clusters with various NVIDIA GPUS ranging from 16 to 48 GB and a local machine with [Docker](https://www.docker.com/) and the [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html) for testing the challenge container.
+
+The docker algorithm ran without issues in the [Grand Challenge](https://monkey.grand-challenge.org/) platform, using the `ml.g4dn.xlarge` istance that comprises a single NVIDIA T4 GPU, 4 vCPUs, 16GiB of Memory and 125 GB NVMe SSD.
+
 
 ## Steps
 
@@ -48,6 +59,10 @@ The challenge comprises two primary tasks:
 5. Run the `test_run.sh` in the `docker_inference_grand_challenge` folder. The script will create a docker container installing all the required dependencies, then run the inference via the entrypoint `inference.py` script.
 
 6. If successful, 3 JSONs files for the predictions will be in the `docker_inference_grand_challenge/test/output` folder.
+
+7. (OPTIONAL) If the inference was successfull, you can use the `save.sh` script to save the compressed container for uploading it in the Grand Challenge website. You can then compress the models inside the `docker_inference_grand_challenge/example_model` folder also for uploading them separately in the Grand Challenge platform. You can do that by running:
+
+         tar -czvf ensemble_compressed_models.tar.gz -C /docker_inference_grand_challenge/example_model/ .
 
 ### Option B - Inference using Conda env (less reproducible)
 
@@ -77,7 +92,7 @@ The challenge comprises two primary tasks:
 
 11. Run the `docker_inference_grand_challenge/inference.py` script
 
-12. If successful, 3 JSONs files for the predictions will be in the `docker_inference_grand_challenge/test/output` folder.
+12. If successful, 3 JSONs files for the predictions will be in the `docker_inference_grand_challenge/test_output` folder.
 
 # **Architecture and Inference Pipeline**
 
