@@ -26,6 +26,59 @@ The challenge comprises two primary tasks:
 1. **Detection of Mononuclear Inflammatory Cells (MNLs):** Identifying mononuclear leukocytes in biopsy images.
 2. **Classification of Inflammatory Cells:** Distinguishing between monocytes and lymphocytes within the detected cells.
 
+# Installation & Inference
+
+**To test inference with our pretrained models, included in this repo, we highly suggest you use docker**. In this way you will create a docker container as in the challenge that will be tested with a **single** input WSI `.tif` file and the corresponding tissue mask `.tif` file.
+
+## Steps
+
+1. Download the backbone model weights (VIT-256 & SAM-H) from the [CellViT-plus-plus](https://github.com/TIO-IKIM/CellViT-plus-plus) repository [here](https://drive.google.com/drive/folders/1ujtMcxAr5kYYuvnbglfYZZnRH3ZOli79).
+
+2. Put the CellVit++ backbones weights in the respective folders:
+
+    - `CellViT-SAM-H-x40-AMP.pth` goes in the `docker_inference_grand_challenge/resources/backbones/SAM-H` folder.
+    - `CellViT-256-x40-AMP.pth` goes in the `docker_inference_grand_challenge/resources/backbones/VIT-256` folder. 
+    
+3. The finetuned weights (ensemble) are already in the repository folder in `docker_inference_grand_challenge/example_model`, while other additional fallback model weights or the one used before the ensemble submission are in the `docker_inference_grand_challenge/resources/models` folder.
+
+4. Put your WSI `.tif` image in the `docker_inference_grand_challenge/test/input/images/kidney-transplant-biopsy-wsi-pas` folder and the WSI tissue-mask `.tif` file in the `docker_inference_grand_challenge/test/input/images/tissue-mask` folder.
+
+### Option A - Inference with docker (recommended)
+
+5. Run the `test_run.sh` in the `docker_inference_grand_challenge` folder. The script will create a docker container installing all the required dependencies, then run the inference via the entrypoint `inference.py` script.
+
+6. If successful, 3 JSONs files for the predictions will be in the `docker_inference_grand_challenge/test/output` folder.
+
+### Option B - Inference using Conda env (less reproducible)
+
+5. Install the conda env and other requirements:
+
+        conda env create -f environment_verbose.yaml
+        conda activate cellvit_env
+        pip install -r requirements.txt
+
+6. Re-install a correct/different version of torch, torchvision and torchaudio depending on your CUDA version (we used CUDA 12.1 as the original CellVit++ repo)
+
+        pip install torch==2.2.2 torchvision==0.17.2 torchaudio==2.2.2 --index-url https://download.pytorch.org/whl/cu121
+
+7. Install [ASAP](https://github.com/computationalpathologygroup/ASAP)
+8. Install [Openslide](https://github.com/openslide/openslide-python) and [WholeSlideData](https://github.com/DIAGNijmegen/pathology-whole-slide-data):
+
+        pip install openslide-python openslide-bin
+        pip install git+https://github.com/DIAGNijmegen/pathology-whole-slide-data@main
+
+9. Substitute the `path_to_ASAP_installation` with the actual ASAP path and `path_to_conda_env` with the path to your cellvit_env and run the command:
+
+        echo "path_to_ASAP_installation/ASAP/bin" > path_to_conda_env/lib/python3.10/site-packages/asap.pth
+
+10. In the `docker_inference_grand_challenge/inference.py` script, set the flag in line 226 to `False`:
+
+        DOCKER_INFERENCE = True # NOTE: Set to False if running locally without Docker
+
+11. Run the `docker_inference_grand_challenge/inference.py` script
+
+12. If successful, 3 JSONs files for the predictions will be in the `docker_inference_grand_challenge/test/output` folder.
+
 # **Architecture and Inference Pipeline**
 
 > [!NOTE]  

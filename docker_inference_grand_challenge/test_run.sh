@@ -61,4 +61,4 @@ docker run --rm \
 
 echo "=+= Wrote results to ${OUTPUT_DIR}"
 
-echo "=+= Save this image for uploading via save.sh \"${DOCKER_TAG}\""
+echo "=+= You can save this image for uploading to Grand Challenge via save.sh \"${DOCKER_TAG}\""
