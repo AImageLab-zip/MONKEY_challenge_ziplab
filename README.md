@@ -88,7 +88,7 @@ The docker algorithm ran without issues in the [Grand Challenge](https://monkey.
 
 10. In the `docker_inference_grand_challenge/inference.py` script, set the flag in line 226 to `False`:
 
-        DOCKER_INFERENCE = True # NOTE: Set to False if running locally without Docker
+        DOCKER_INFERENCE = False # NOTE: Set to False if running locally without Docker
 
 11. Run the `docker_inference_grand_challenge/inference.py` script
 
