@@ -3,7 +3,6 @@
 
 ## Env and files
 
-*.pth
 *.pt
 *.tif
 *.tiff
@@ -29,9 +28,9 @@ models/*
 logs/*
 outputs/*
 data_debug/images/*
-inference-docker-debug/example_model/*
-inference-docker-debug/test/*
 challenge_example_code/*
+# backbone weights
+docker_inference_grand_challenge/resources/backbones/*/*.pth
 
 
 #temp source folder architectures repositories

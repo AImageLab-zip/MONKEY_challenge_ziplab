@@ -1,0 +1,1 @@
+Put the test WSI .tif tissue mask file here
