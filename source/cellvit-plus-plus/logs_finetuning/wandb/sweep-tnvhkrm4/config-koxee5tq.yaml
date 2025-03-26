@@ -1,0 +1,10 @@
+wandb_version: 1
+
+model.hidden_dim:
+  value: 128
+training.optimizer_hyperparameter.lr:
+  value: 0.0008605784368857741
+training.optimizer_hyperparameter.weight_decay:
+  value: 0.0008976518665220255
+training.scheduler.scheduler_type:
+  value: exponential

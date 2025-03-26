@@ -1,0 +1,8 @@
+wandb_version: 1
+
+model.hidden_dim:
+  value: 128
+training.optimizer_hyperparameter.lr:
+  value: 0.00950376856388488
+training.scheduler.scheduler_type:
+  value: constant
