@@ -2,8 +2,6 @@
 # Edit at https://www.toptal.com/developers/gitignore?templates=python,visualstudiocode,jupyternotebooks
 
 ## Env and files
-
-
 *.tif
 *.tiff
 *.pkl
@@ -14,6 +12,9 @@ monkey_env/*
 monkey_env
 cellvit_env/*
 cellvit_env
+
+##launch files
+launch_job.sh
 
 
 ##model checkpoints
