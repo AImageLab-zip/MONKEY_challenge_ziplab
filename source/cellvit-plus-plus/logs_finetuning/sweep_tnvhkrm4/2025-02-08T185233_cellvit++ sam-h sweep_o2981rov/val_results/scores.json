@@ -1,7 +1,0 @@
-{
-  "Loss/Validation": 0.539065420627594,
-  "F1-Score/Validation": 0.8076382279396057,
-  "Accuracy-Score/Validation": 0.8076382279396057,
-  "AUROC/Validation": 0.8873955607414246,
-  "Average-Precision/Validation": 0.6770383715629578
-}
