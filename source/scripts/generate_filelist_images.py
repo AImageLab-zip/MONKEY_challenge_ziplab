@@ -25,7 +25,7 @@ def generate_csv(folder_path, output_csv="output.csv"):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Generate CSV from folder contents.")
     parser.add_argument(
-        "folder_path", type=str, help="Path to the folder containing files."
+        "--folder_path", type=str, help="Path to the folder containing files."
     )
     parser.add_argument(
         "--output",
