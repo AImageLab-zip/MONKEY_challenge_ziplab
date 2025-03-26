@@ -3,7 +3,7 @@
 
 ## Env and files
 
-*.pt
+
 *.tif
 *.tiff
 *.pkl
@@ -12,6 +12,13 @@
 
 monkey_env/*
 monkey_env
+cellvit_env/*
+cellvit_env
+
+
+##model checkpoints
+checkpoints/*
+checkpoints
 
 ## asap and libs install
 local_dependencies/*
