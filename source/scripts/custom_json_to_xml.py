@@ -122,6 +122,6 @@ def json_to_xml(json_file, xml_file, prob_cutoff=0.0):
 
 if __name__ == "__main__":
     json_to_xml(
-        "/work/grana_urologia/MONKEY_challenge/docker_inference_grand_challenge/test_output/detected-inflammatory-cells.json",
-        "./A_P000001_detected-inflammatory-cells.xml",
+        "/work/grana_urologia/MONKEY_challenge/outputs/cellvit_baseline/json_preds/A_P000022/A_P000022_detected-inflammatory-cells.json",
+        "./A_P000022_detected-inflammatory-cells.xml",
     )

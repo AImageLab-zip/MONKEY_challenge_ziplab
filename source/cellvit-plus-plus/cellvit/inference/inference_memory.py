@@ -35,9 +35,6 @@ from cellvit.inference.postprocessing_cupy import (
 )
 from cellvit.inference.wsi_meta import load_wsi_meta
 
-# ray.init(ignore_reinit_error=True, num_cpus=8)
-# print("success")
-
 
 class CellViTInferenceMemory(CellViTInference):
     def __init__(
@@ -106,8 +103,8 @@ class CellViTInferenceMemory(CellViTInference):
             patch_size=self.patch_size,
             patch_overlap=(self.overlap / self.patch_size) * 100,
             target_mpp=target_mpp,
-            apply_prefilter=False,  # was apply_prefilter,
-            filter_patches=False,  # was filter_patches,
+            apply_prefilter=apply_prefilter,
+            filter_patches=filter_patches,
             target_mpp_tolerance=0.035,
             **kwargs,
         )
@@ -147,8 +144,6 @@ class CellViTInferenceMemory(CellViTInference):
         call_ids = []
 
         self.logger.info("Extracting cells using CellViT...")
-        # from pprint import pprint
-
         with torch.no_grad():
             pbar = tqdm.tqdm(
                 wsi_inference_dataloader, total=len(wsi_inference_dataloader)
@@ -163,13 +158,7 @@ class CellViTInferenceMemory(CellViTInference):
                         predictions = self.model.forward(patches, retrieve_tokens=True)
                 else:
                     predictions = self.model.forward(patches, retrieve_tokens=True)
-
-                # print("Printing pre-softmax predictions")
-                # pprint(predictions)
                 predictions = self.apply_softmax_reorder(predictions)
-
-                # print("Printing post-softmax predictions")
-                # pprint(predictions)
                 call_id = batch_actor.convert_batch_to_graph_nodes.remote(
                     predictions, metadata
                 )
@@ -208,6 +197,11 @@ class CellViTInferenceMemory(CellViTInference):
             graph_data["cell_tokens"] = graph_data["cell_tokens"] + batch_cell_tokens
             graph_data["positions"] = graph_data["positions"] + batch_cell_positions
 
+        from pprint import pprint
+
+        pprint(cell_dict_wsi)  # probably contains the cell prob. predictions
+        pprint(cell_dict_wsi[0])
+
         # cleaning overlapping cells
         if len(cell_dict_wsi) == 0:
             self.logger.warning("No cells have been extracted")
@@ -233,38 +227,6 @@ class CellViTInferenceMemory(CellViTInference):
                 rescaling_factor=wsi.metadata["target_patch_mpp"]
                 / wsi.metadata["base_mpp"],
             )
-
-        # print("Printing the first cell in the cell_dict_wsi")
-        # pprint(cell_dict_wsi[0])
-        # print("Printing the first cell in the cell_dict_detection")
-        # pprint(cell_dict_detection[0])
-
-        optimal_threshold = 0.85
-
-        # 1. Get the indices in cell_dict_wsi that pass the threshold.
-        indices = [
-            i
-            for i, cell in enumerate(cell_dict_wsi)
-            if cell.get("type_prob", 0) >= optimal_threshold
-        ]
-
-        # 2. Filter *both* dicts by the same indices.
-        filtered_cell_dict_wsi = [cell_dict_wsi[i] for i in indices]
-        filtered_cell_dict_detection = [cell_dict_detection[i] for i in indices]
-
-        # 3. Filter the graph data as well, if needed.
-        filtered_graph_tokens = [graph_data["cell_tokens"][i] for i in indices]
-        filtered_positions = [graph_data["positions"][i] for i in indices]
-
-        # 4. Update original references.
-        cell_dict_wsi = filtered_cell_dict_wsi
-        cell_dict_detection = filtered_cell_dict_detection
-        graph_data["cell_tokens"] = filtered_graph_tokens
-        graph_data["positions"] = filtered_positions
-
-        self.logger.info(
-            f"Cells remaining after threshold filtering: {len(cell_dict_wsi)}"
-        )
 
         # saving/storing
         output_wsi_name = wsi_path.name.split(".")[0]
@@ -307,9 +269,6 @@ class CellViTInferenceMemory(CellViTInference):
             "type_map": self.label_map,
             "cells": cell_dict_detection,
         }
-        # TODO: Implement filtering of cells based on ROI
-        print("Code to filter out the cells goes here!!!")
-
         if self.compression:
             with open(
                 str(self.outdir / f"{output_wsi_name}_cell_detection.json.snappy"), "wb"

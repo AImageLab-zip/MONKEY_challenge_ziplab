@@ -184,7 +184,9 @@ if __name__ == "__main__":
     mode = "json"  # or "geojson"
     mask_tif_path = "/work/grana_urologia/MONKEY_challenge/data/monkey-data/images/tissue-masks/A_P000001_mask.tif"
     json_file_path = "/work/grana_urologia/MONKEY_challenge/source/sota_architectures/test_data/outputs/A_P000001_PAS_CPG_cell_detection.json"
-    save_dir = "/work/grana_urologia/MONKEY_challenge/source/sota_architectures/transformed_preds/A_P000001"
+    save_dir = (
+        "/work/grana_urologia/MONKEY_challenge/outputs/cellvit_baseline/json_preds"
+    )
     os.makedirs(save_dir, exist_ok=True)
 
     # Parse with OpenSlide-level-based approach
@@ -194,7 +196,7 @@ if __name__ == "__main__":
         real_mpp=0.24199951445730394,
         z_spacing=0.25,
         monocyte_label="Inflammatory",
-        lymphocyte_label="lymphocytes",
+        lymphocyte_label="Inflammatory",
         mask_tif_path=mask_tif_path,
         downsample_factor=4,
     )

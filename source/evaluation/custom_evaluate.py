@@ -51,6 +51,9 @@ def evaluate_predictions(predictions_folder, ground_truth_folder):
         if subfolder.is_dir():
             patient_id = subfolder.name  # e.g. "A_P000001"
             progress_bar.set_postfix_str(f"Patient {subfolder.name}")
+
+            # TODO: check if the patient has a ground truth file
+
             result = process_patient(patient_id, predictions_path, gt_path)
             if result is not None:
                 results.append(result)
@@ -389,7 +392,7 @@ def mm_to_pixel(dist, spacing=SPACING_LEVEL0):
 if __name__ == "__main__":
     # Example usage
     eval_metrics(
-        predictions_folder="/work/grana_urologia/MONKEY_challenge/data/eval_test_cellvit/ensemble_final/",
+        predictions_folder="/work/grana_urologia/MONKEY_challenge/outputs/cellvit_baseline/json_preds/",
         ground_truth_folder="/work/grana_urologia/MONKEY_challenge/data/monkey-data/annotations/json_mm",
-        save_path="/work/grana_urologia/MONKEY_challenge/data/eval_test_cellvit/ensemble_final/",
+        save_path="/work/grana_urologia/MONKEY_challenge/outputs/cellvit_baseline/scores",
     )
