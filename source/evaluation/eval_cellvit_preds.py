@@ -1,10 +1,14 @@
 import json
 import os
 from pathlib import Path
-from pprint import pprint
+
+# from pprint import pprint
 from typing import Any, Dict, List, Tuple
 
+import numpy as np
 import openslide
+from eval_plot_preds import compute_offline_metrics
+from sklearn.model_selection import KFold  # , StratifiedKFold
 from tqdm import tqdm
 
 SPACING_LEVEL0 = 0.24199951445730394
@@ -357,12 +361,15 @@ def process_predictions(
                     json.dump(json_data, f, indent=2)
                 print(f"Saved {out_path}")
 
-                main_pbar.update(
-                    1
-                )  # Update the main progress bar after processing each patient
+            main_pbar.update(
+                1
+            )  # Update the main progress bar after processing each patient
 
 
 def main():
+    SEED = 42
+    N_FOLDS = 5
+
     preds_dir = "/work/grana_urologia/MONKEY_challenge/outputs/cellvit_baseline/predictions_sam-h_baseline_all_dataset"
     gt_dir = (
         "/work/grana_urologia/MONKEY_challenge/data/monkey-data/annotations/json_mm"
@@ -374,11 +381,101 @@ def main():
         "/work/grana_urologia/MONKEY_challenge/outputs/cellvit_baseline/json_preds"
     )
 
+    metrics_dir = (
+        "/work/grana_urologia/MONKEY_challenge/outputs/cellvit_baseline/scores"
+    )
+
+    print("Matching ground truth, predictions, and masks...")
     patient_data = match_preds_gts(preds_dir, gt_dir, mask_dir)
     os.makedirs(output_dir, exist_ok=True)
+    print("Matching done.\nProcessing predictions...")
 
-    # Set only_inflammatory to True if predictions contain only the "Inflammatory" label.
-    process_predictions(patient_data, output_dir, only_inflammatory=True)
+    # Evaluate the predictions on the n folds of the dataset
+
+    # 1. split the dataset into n folds
+    skf = KFold(n_splits=N_FOLDS, shuffle=True, random_state=SEED)
+
+    # extract the patient IDs
+    patient_ids = list(patient_data.keys())
+
+    # 2. for each fold, compute the metrics, plot the FROC curve, and save the results
+    for fold_idx, (train_idx, test_idx) in enumerate(skf.split(patient_ids)):
+        print(f"\nProcessing fold {fold_idx}...")
+        # create a new metrics directory for the fold
+        metrics_fold_dir = os.path.join(metrics_dir, f"fold_{fold_idx}")
+        os.makedirs(metrics_fold_dir, exist_ok=True)
+
+        # create a new directory for the current fold
+        fold_preds_dir = os.path.join(output_dir, f"fold_{fold_idx}")
+        os.makedirs(fold_preds_dir, exist_ok=True)
+
+        # get the patient IDs for the current fold
+        # train_patients = [patient_ids[idx] for idx in train_idx]
+        test_patients = [patient_ids[idx] for idx in test_idx]
+        fold_patient_data = {pid: patient_data[pid] for pid in test_patients}
+
+        # 2a. process the predictions for the current fold
+        # Set only_inflammatory to True if predictions contain only the "Inflammatory" label.
+        process_predictions(fold_patient_data, fold_preds_dir, only_inflammatory=True)
+
+        print(f"Processing metrics for fold {fold_idx}...")
+
+        # 2b. compute the scores and FROC curves based on the current fold and save the results
+        compute_offline_metrics(
+            preds_dir=fold_preds_dir,
+            ground_truth_dir=gt_dir,
+            save_dir=metrics_fold_dir,
+            metrics_filename=f"metrics_fold_{fold_idx}.json",
+            plot_froc=True,
+            plot_froc_single_wsis=True,
+            froc_plot_filename=f"froc_curve_fold_{fold_idx}.png",
+        )
+
+        print(f"Metrics and FROC curve for fold {fold_idx} saved in {metrics_fold_dir}")
+
+    # 3. aggregate the results from all folds
+    # compute the mean and standard deviation of the FROC scores
+    froc_scores_infl = []
+    froc_scores_mon = []
+    froc_scores_lym = []
+    for fold_idx in range(N_FOLDS):
+        metrics_fold_dir = os.path.join(metrics_dir, f"fold_{fold_idx}")
+        metrics_file_path = os.path.join(
+            metrics_fold_dir, f"metrics_fold_{fold_idx}.json"
+        )
+        with open(metrics_file_path, "r") as f:
+            metrics = json.load(f)
+        froc_score_inflammatory = metrics["aggregates"]["inflammatory-cells"][
+            "froc_score_aggr"
+        ]
+        froc_score_monocytes = metrics["aggregates"]["monocytes"]["froc_score_aggr"]
+        froc_score_lymphocytes = metrics["aggregates"]["lymphocytes"]["froc_score_aggr"]
+        froc_scores_infl.append(froc_score_inflammatory)
+        froc_scores_mon.append(froc_score_monocytes)
+        froc_scores_lym.append(froc_score_lymphocytes)
+
+    mean_froc_inf = np.mean(froc_scores_infl)
+    std_froc_inf = np.std(froc_scores_infl)
+    mean_froc_mon = np.mean(froc_scores_mon)
+    std_froc_mon = np.std(froc_scores_mon)
+    mean_froc_lym = np.mean(froc_scores_lym)
+    std_froc_lym = np.std(froc_scores_lym)
+
+    print(f"Mean FROC scores for inflammatory-cells: {mean_froc_inf} ± {std_froc_inf}")
+    print(f"Mean FROC scores for monocytes: {mean_froc_mon} ± {std_froc_mon}")
+    print(f"Mean FROC scores for lymphocytes: {mean_froc_lym} ± {std_froc_lym}")
+
+    # save the results in a json file in the metrics_dir
+    froc_scores = {
+        "inflammatory_cells": {"mean": mean_froc_inf, "std": std_froc_inf},
+        "monocytes": {"mean": mean_froc_mon, "std": std_froc_mon},
+        "lymphocytes": {"mean": mean_froc_lym, "std": std_froc_lym},
+    }
+    froc_scores_path = os.path.join(metrics_dir, "froc_scores_overall_folds.json")
+    with open(froc_scores_path, "w") as f:
+        json.dump(froc_scores, f, indent=2)
+
+    print(f"FROC scores fold aggregation saved in {froc_scores_path}")
 
 
 if __name__ == "__main__":

@@ -1,12 +1,13 @@
 import json
 import os
 from pathlib import Path
-from pprint import pformat, pprint
 
-import monai.metrics as mm
+# from pprint import pformat, pprint
 import numpy as np
+from compute_froc import compute_froc_curve_data
 from scipy.spatial import distance
-from sklearn.metrics import auc
+
+# from sklearn.metrics import auc
 from tqdm import tqdm
 
 # ---------------------------------------------------------------------
@@ -282,7 +283,7 @@ def match_coordinates(ground_truth, predictions, pred_prob, margin):
 def get_froc_score(fp_probs, tp_probs, total_pos, area_mm2):
     eval_thresholds = (10, 20, 50, 100, 200, 300)
 
-    fp_per_mm2, sensitivity = mm.compute_froc_curve_data(
+    fp_per_mm2, sensitivity = compute_froc_curve_data(
         fp_probs, tp_probs, total_pos, area_mm2
     )
     if len(fp_per_mm2) == 0 and len(sensitivity) == 0:
