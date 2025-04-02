@@ -4,15 +4,10 @@ from pathlib import Path
 from pprint import pprint
 from typing import Any, Dict, List, Tuple
 
-import ijson
-import rasterio
-import shapely.affinity
-from rasterio.enums import Resampling
-from rasterio.features import shapes
-from shapely.geometry import Point, shape
-from shapely.ops import unary_union
-
 import openslide
+from tqdm import tqdm
+
+SPACING_LEVEL0 = 0.24199951445730394
 
 
 def match_preds_gts(
@@ -105,20 +100,32 @@ def match_preds_gts(
 def _build_annotation_json(
     points: List[Tuple[float, float, float]],
     annotation_name: str,
-    fixed_z_value: float = 0.0,
+    fixed_z_value: float = SPACING_LEVEL0,
 ) -> dict:
     """
-    Build the annotation dictionary:
+    Build the annotation dictionary with coordinates in millimeters.
+    The input points are pixel coordinates, and fixed_z_value (in micrometers per pixel)
+    is used to convert these to millimeters.
+
+    The output dictionary is structured as:
       {
         "name": annotation_name,
         "type": "Multiple points",
         "version": {"major": 1, "minor": 0},
         "points": [
-          {"name": "Point 0", "point": [x, y, z], "probability": ...},
+          {"name": "Point 0", "point": [x_mm, y_mm, z_mm], "probability": ...},
           ...
         ]
       }
+
+    :param points: List of tuples (x_pixel, y_pixel, probability)
+    :param annotation_name: Name of the annotation (e.g. "monocytes")
+    :param fixed_z_value: Spacing level 0 in micrometers per pixel.
+    :return: Annotation dictionary with coordinates converted to millimeters.
     """
+    # Compute conversion factor (micrometers per pixel -> millimeters per pixel)
+    conversion_factor = fixed_z_value / 1000.0
+
     annotation_dict = {
         "name": annotation_name,
         "type": "Multiple points",
@@ -126,10 +133,15 @@ def _build_annotation_json(
         "points": [],
     }
     for idx, (x_val, y_val, prob) in enumerate(points):
+        # Convert x and y coordinates from pixels to mm using the conversion factor
+        x_mm = x_val * conversion_factor
+        y_mm = y_val * conversion_factor
+        # Convert the fixed z value to mm
+        z_mm = fixed_z_value / 1000.0
         annotation_dict["points"].append(
             {
                 "name": f"Point {idx}",
-                "point": [x_val, y_val, fixed_z_value],
+                "point": [x_mm, y_mm, z_mm],
                 "probability": prob,
             }
         )
@@ -139,7 +151,7 @@ def _build_annotation_json(
 def create_annotations(
     filtered_preds: Dict[str, List[Tuple[float, float, float]]],
     only_inflammatory: bool = False,
-    fixed_z: float = 0.25,
+    fixed_z: float = SPACING_LEVEL0,
 ) -> Tuple[dict, dict, dict]:
     """
     Create three annotation JSONs with names "monocytes", "lymphocytes", and "inflammatory-cells".
@@ -177,6 +189,7 @@ def filter_points_openslide(
     point_dict: Dict[str, List[Tuple[float, float, float]]],
     mask_path: str,
     region_size: int = 3,
+    position: int = 1,  # Position for the nested progress bar
 ) -> Dict[str, List[Tuple[float, float, float]]]:
     """
     Filters points (with probabilities) using OpenSlide.
@@ -189,19 +202,26 @@ def filter_points_openslide(
     slide = openslide.OpenSlide(mask_path)
     half_region = region_size // 2
     filtered_dict = {}
-    for label, points in point_dict.items():
-        filtered_points = []
-        for x, y, prob in points:
-            region_x = int(round(x)) - half_region
-            region_y = int(round(y)) - half_region
-            region = slide.read_region(
-                (region_x, region_y), 0, (region_size, region_size)
-            )
-            center_pixel = region.getpixel((half_region, half_region))
-            # Consider the point inside if the red channel is nonzero (adjust threshold if needed)
-            if center_pixel[0] != 0:
-                filtered_points.append((x, y, prob))
-        filtered_dict[label] = filtered_points
+
+    # Initialize the nested progress bar
+    total_points = sum(len(points) for points in point_dict.values())
+    with tqdm(
+        total=total_points, desc="Filtering points", position=position, leave=False
+    ) as pbar:
+        for label, points in point_dict.items():
+            filtered_points = []
+            for x, y, prob in points:
+                region_x = int(round(x)) - half_region
+                region_y = int(round(y)) - half_region
+                region = slide.read_region(
+                    (region_x, region_y), 0, (region_size, region_size)
+                )
+                center_pixel = region.getpixel((half_region, half_region))
+                # Consider the point inside if the red channel is nonzero (adjust threshold if needed)
+                if center_pixel[0] != 0:
+                    filtered_points.append((x, y, prob))
+                pbar.update(1)  # Update the progress bar for each point processed
+            filtered_dict[label] = filtered_points
     slide.close()
     return filtered_dict
 
@@ -258,7 +278,7 @@ def process_predictions(
     patient_data: Dict[str, Dict[str, str]],
     output_dir: str,
     only_inflammatory: bool = False,
-    fixed_z: float = 0.25,
+    fixed_z: float = SPACING_LEVEL0,
 ) -> None:
     """
     For each patient, process the predictions:
@@ -266,70 +286,80 @@ def process_predictions(
       - Optionally filter points using the corresponding tissue mask (via OpenSlide).
       - Create three annotation JSONs: "detected-monocytes.json", "detected-lymphocytes.json", and "detected-inflammatory-cells.json".
     """
-    for patient_id, data in patient_data.items():
-        patient_output_dir = os.path.join(output_dir, patient_id)
-        os.makedirs(patient_output_dir, exist_ok=True)
+    with tqdm(
+        total=len(patient_data), desc="Processing patients", position=0
+    ) as main_pbar:
+        for patient_id, data in patient_data.items():
+            # Update the description to show the current patient ID
+            main_pbar.set_description(f"Processing patient: {patient_id}")
 
-        roi_mask_path = data.get("mask")
-        preds_path = data.get("cellvit_preds")
+            patient_output_dir = os.path.join(output_dir, patient_id)
+            os.makedirs(patient_output_dir, exist_ok=True)
 
-        cells = parse_cells_json(preds_path)
-        print(f"\nProcessing {patient_id} with {len(cells)} cells")
-        pprint(cells)
+            data = patient_data[patient_id]
+            roi_mask_path = data.get("mask")
+            preds_path = data.get("cellvit_preds")
 
-        preds_points: Dict[str, List[Tuple[float, float, float]]] = {}
-        if only_inflammatory:
-            inflammatory_points = [
-                (cell["centroid"][0], cell["centroid"][1], cell["probability"])
-                for cell in cells
-                if cell["class"].lower() == "inflammatory"
-            ]
-            preds_points["inflammatory"] = inflammatory_points
-        else:
-            preds_points["monocytes"] = [
-                (cell["centroid"][0], cell["centroid"][1], cell["probability"])
-                for cell in cells
-                if cell["class"].lower() == "monocytes"
-            ]
-            preds_points["lymphocytes"] = [
-                (cell["centroid"][0], cell["centroid"][1], cell["probability"])
-                for cell in cells
-                if cell["class"].lower() == "lymphocytes"
-            ]
-            preds_points["inflammatory"] = (
-                preds_points["monocytes"] + preds_points["lymphocytes"]
-            )
+            cells = parse_cells_json(preds_path)
+            print(f"\nProcessing {patient_id} with {len(cells)} cells")
 
-        if roi_mask_path:
-            preds_points = filter_points_openslide(
-                preds_points, roi_mask_path, region_size=3
-            )
+            preds_points: Dict[str, List[Tuple[float, float, float]]] = {}
+            if only_inflammatory:
+                inflammatory_points = [
+                    (cell["centroid"][0], cell["centroid"][1], cell["probability"])
+                    for cell in cells
+                    if cell["class"].lower() == "inflammatory"
+                ]
+                preds_points["inflammatory"] = inflammatory_points
+            else:
+                preds_points["monocytes"] = [
+                    (cell["centroid"][0], cell["centroid"][1], cell["probability"])
+                    for cell in cells
+                    if cell["class"].lower() == "monocytes"
+                ]
+                preds_points["lymphocytes"] = [
+                    (cell["centroid"][0], cell["centroid"][1], cell["probability"])
+                    for cell in cells
+                    if cell["class"].lower() == "lymphocytes"
+                ]
+                preds_points["inflammatory"] = (
+                    preds_points["monocytes"] + preds_points["lymphocytes"]
+                )
 
-        if only_inflammatory:
-            ann_mon, ann_lym, ann_infl = create_annotations(
-                preds_points,
-                only_inflammatory=True,
-                fixed_z=fixed_z,
-            )
-        else:
-            ann_mon, ann_lym, ann_infl = create_annotations(
-                preds_points,
-                only_inflammatory=False,
-                fixed_z=fixed_z,
-            )
+            if roi_mask_path:
+                preds_points = filter_points_openslide(
+                    preds_points, roi_mask_path, region_size=3
+                )
 
-        for json_data, filename in zip(
-            [ann_mon, ann_lym, ann_infl],
-            [
-                "detected-monocytes.json",
-                "detected-lymphocytes.json",
-                "detected-inflammatory-cells.json",
-            ],
-        ):
-            out_path = os.path.join(patient_output_dir, f"{patient_id}_{filename}")
-            with open(out_path, "w") as f:
-                json.dump(json_data, f, indent=2)
-            print(f"Saved {out_path}")
+            if only_inflammatory:
+                ann_mon, ann_lym, ann_infl = create_annotations(
+                    preds_points,
+                    only_inflammatory=True,
+                    fixed_z=fixed_z,
+                )
+            else:
+                ann_mon, ann_lym, ann_infl = create_annotations(
+                    preds_points,
+                    only_inflammatory=False,
+                    fixed_z=fixed_z,
+                )
+
+            for json_data, filename in zip(
+                [ann_mon, ann_lym, ann_infl],
+                [
+                    "detected-monocytes.json",
+                    "detected-lymphocytes.json",
+                    "detected-inflammatory-cells.json",
+                ],
+            ):
+                out_path = os.path.join(patient_output_dir, f"{patient_id}_{filename}")
+                with open(out_path, "w") as f:
+                    json.dump(json_data, f, indent=2)
+                print(f"Saved {out_path}")
+
+                main_pbar.update(
+                    1
+                )  # Update the main progress bar after processing each patient
 
 
 def main():
