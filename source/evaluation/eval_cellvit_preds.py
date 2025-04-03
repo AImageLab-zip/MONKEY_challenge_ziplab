@@ -1,3 +1,4 @@
+import argparse
 import json
 import os
 from pathlib import Path
@@ -7,11 +8,59 @@ from typing import Any, Dict, List, Tuple
 
 import numpy as np
 import openslide
+import pandas as pd
 from eval_plot_preds import compute_offline_metrics
-from sklearn.model_selection import KFold  # , StratifiedKFold
+from sklearn.model_selection import KFold, StratifiedKFold
 from tqdm import tqdm
 
 SPACING_LEVEL0 = 0.24199951445730394
+
+
+def split_and_save_kfold(
+    n_folds: int = 5,
+    dataset_df: pd.DataFrame = pd.DataFrame(),
+    balance_by=None,
+    seed: int = 42,
+):
+    """
+    Split the data into n folds, from a metadata dataframe, then save the folds with the respective patient ids
+    """
+
+    print(f"Making {n_folds} splits for a daset of n° {len(dataset_df)} istances")
+    dataset_df = dataset_df.reset_index(drop=True)  # Reset before splitting
+
+    # Add a fold_id column initialized to -1 (or reset if already present)
+    # dataset_df = dataset_df.copy()
+    dataset_df["fold_id"] = -1
+
+    fold_patient_ids = {}
+
+    # Choose the splitter
+    if balance_by and balance_by in dataset_df.columns:
+        skf = StratifiedKFold(n_splits=n_folds, shuffle=True, random_state=seed)
+        stratify_col = dataset_df[balance_by]
+        print(
+            f"Stratifying by {balance_by} with {len(stratify_col.unique())} unique values"
+        )
+    else:
+        # Use random non-stratified splitter if no column is specified
+        skf = KFold(n_splits=n_folds, shuffle=True, random_state=seed)
+        stratify_col = None
+        print("No stratification column provided, using random split")
+
+    # Split the data
+    for fold, (train_idx, patients_idx_list) in enumerate(
+        skf.split(dataset_df, stratify_col)
+    ):
+        validation_data = dataset_df.iloc[patients_idx_list]
+
+        # Assign fold IDs to the dataframe
+        dataset_df.loc[patients_idx_list, "fold_id"] = fold
+
+        # Save the patient IDs for the current fold
+        fold_patient_ids[fold] = [validation_data["patient_id"].tolist()]
+
+    return fold_patient_ids
 
 
 def match_preds_gts(
@@ -356,7 +405,7 @@ def process_predictions(
                     "detected-inflammatory-cells.json",
                 ],
             ):
-                out_path = os.path.join(patient_output_dir, f"{patient_id}_{filename}")
+                out_path = os.path.join(patient_output_dir, f"{filename}")
                 with open(out_path, "w") as f:
                     json.dump(json_data, f, indent=2)
                 print(f"Saved {out_path}")
@@ -366,40 +415,96 @@ def process_predictions(
             )  # Update the main progress bar after processing each patient
 
 
+def get_args():
+    parser = argparse.ArgumentParser(description="CellVit Eval Preds Configuration")
+
+    parser.add_argument("--seed", type=int, default=42, help="Random seed")
+    parser.add_argument(
+        "--n_folds", type=int, default=5, help="Number of folds for cross-validation"
+    )
+    parser.add_argument(
+        "--balance_split_by",
+        type=str,
+        default=None,
+        help="Column name for stratified split, or None for random split",
+    )
+
+    parser.add_argument(
+        "--preds_dir",
+        type=str,
+        default="/work/grana_urologia/MONKEY_challenge/outputs/cellvit_baseline/predictions_sam-h_baseline_all_dataset",
+        help="Directory with model predictions",
+    )
+    parser.add_argument(
+        "--gt_dir",
+        type=str,
+        default="/work/grana_urologia/MONKEY_challenge/data/monkey-data/annotations/json_mm",
+        help="Directory with ground truth JSONs",
+    )
+    parser.add_argument(
+        "--mask_dir",
+        type=str,
+        default="/work/grana_urologia/MONKEY_challenge/data/monkey-data/images/tissue-masks",
+        help="Directory with tissue masks",
+    )
+    parser.add_argument(
+        "--output_dir",
+        type=str,
+        default="/work/grana_urologia/MONKEY_challenge/outputs/cellvit_baseline/json_preds",
+        help="Directory to save output JSON predictions",
+    )
+    parser.add_argument(
+        "--metrics_dir",
+        type=str,
+        default="/work/grana_urologia/MONKEY_challenge/outputs/cellvit_baseline/scores",
+        help="Directory to save evaluation scores",
+    )
+    parser.add_argument(
+        "--metadata_dataset_path",
+        type=str,
+        default="/work/grana_urologia/MONKEY_challenge/data/dataset_metadata_df.csv",
+        help="Path to dataset metadata CSV file",
+    )
+
+    return parser.parse_args()
+
+
 def main():
-    SEED = 42
-    N_FOLDS = 5
+    args = get_args()
 
-    preds_dir = "/work/grana_urologia/MONKEY_challenge/outputs/cellvit_baseline/predictions_sam-h_baseline_all_dataset"
-    gt_dir = (
-        "/work/grana_urologia/MONKEY_challenge/data/monkey-data/annotations/json_mm"
-    )
-    mask_dir = (
-        "/work/grana_urologia/MONKEY_challenge/data/monkey-data/images/tissue-masks"
-    )
-    output_dir = (
-        "/work/grana_urologia/MONKEY_challenge/outputs/cellvit_baseline/json_preds"
-    )
+    SEED = args.seed
+    N_FOLDS = args.n_folds
+    BALANCE_SPLIT_BY = args.balance_split_by
+    preds_dir = args.preds_dir
+    gt_dir = args.gt_dir
+    mask_dir = args.mask_dir
+    output_dir = args.output_dir
+    metrics_dir = args.metrics_dir
+    metadata_dataset_path = args.metadata_dataset_path
 
-    metrics_dir = (
-        "/work/grana_urologia/MONKEY_challenge/outputs/cellvit_baseline/scores"
-    )
+    os.makedirs(output_dir, exist_ok=True)
 
     print("Matching ground truth, predictions, and masks...")
     patient_data = match_preds_gts(preds_dir, gt_dir, mask_dir)
-    os.makedirs(output_dir, exist_ok=True)
-    print("Matching done.\nProcessing predictions...")
-
-    # Evaluate the predictions on the n folds of the dataset
-
-    # 1. split the dataset into n folds
-    skf = KFold(n_splits=N_FOLDS, shuffle=True, random_state=SEED)
-
     # extract the patient IDs
     patient_ids = list(patient_data.keys())
 
+    # Evaluate the predictions on the n folds of the dataset
+    # 0. load the metadata dataset
+    dataset_df = pd.read_csv(metadata_dataset_path)
+
+    # 1. split the dataset into n folds
+    patients_fold_split_dict = split_and_save_kfold(
+        n_folds=N_FOLDS,
+        dataset_df=dataset_df,
+        balance_by=BALANCE_SPLIT_BY,
+        seed=SEED,
+    )
+
+    print("Matching done.\nProcessing predictions...")
+
     # 2. for each fold, compute the metrics, plot the FROC curve, and save the results
-    for fold_idx, (train_idx, test_idx) in enumerate(skf.split(patient_ids)):
+    for fold_idx, patients_idx_list in patients_fold_split_dict.items():
         print(f"\nProcessing fold {fold_idx}...")
         # create a new metrics directory for the fold
         metrics_fold_dir = os.path.join(metrics_dir, f"fold_{fold_idx}")
@@ -410,9 +515,7 @@ def main():
         os.makedirs(fold_preds_dir, exist_ok=True)
 
         # get the patient IDs for the current fold
-        # train_patients = [patient_ids[idx] for idx in train_idx]
-        test_patients = [patient_ids[idx] for idx in test_idx]
-        fold_patient_data = {pid: patient_data[pid] for pid in test_patients}
+        fold_patient_data = {pid: patient_data[pid] for pid in patients_idx_list}
 
         # 2a. process the predictions for the current fold
         # Set only_inflammatory to True if predictions contain only the "Inflammatory" label.

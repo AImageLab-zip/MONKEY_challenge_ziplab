@@ -4,7 +4,7 @@ from pathlib import Path
 
 # from pprint import pformat, pprint
 import numpy as np
-from compute_froc import compute_froc_curve_data
+from compute_froc import compute_froc_curve_data, compute_froc_score
 from scipy.spatial import distance
 
 # from sklearn.metrics import auc
@@ -295,7 +295,7 @@ def get_froc_score(fp_probs, tp_probs, total_pos, area_mm2):
         fp_per_mm2 = [len(fp_probs) / area_mm2]
         froc_score = np.mean([int(fp_per_mm2[0] < i) for i in eval_thresholds])
     else:
-        froc_score = mm.compute_froc_score(
+        froc_score = compute_froc_score(
             fp_per_mm2, sensitivity, eval_thresholds=eval_thresholds
         )
 
