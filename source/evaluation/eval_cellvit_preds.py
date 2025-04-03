@@ -2,8 +2,7 @@ import argparse
 import json
 import os
 from pathlib import Path
-
-# from pprint import pprint
+from pprint import pprint
 from typing import Any, Dict, List, Tuple
 
 import numpy as np
@@ -58,7 +57,7 @@ def split_and_save_kfold(
         dataset_df.loc[patients_idx_list, "fold_id"] = fold
 
         # Save the patient IDs for the current fold
-        fold_patient_ids[fold] = [validation_data["patient_id"].tolist()]
+        fold_patient_ids[fold] = validation_data["Slide ID"].tolist()
 
     return fold_patient_ids
 
@@ -279,7 +278,7 @@ def filter_points_openslide(
     return filtered_dict
 
 
-def parse_cells_json(json_path: str) -> List[Dict[str, Any]]:
+def parse_cells_json(json_path) -> List[Dict[str, Any]]:
     """
     Extracts the probability, type (class) and centroid position (x, y) of each cell
     from the JSON file.
@@ -432,7 +431,7 @@ def get_args():
     parser.add_argument(
         "--preds_dir",
         type=str,
-        default="/work/grana_urologia/MONKEY_challenge/outputs/cellvit_baseline/predictions_sam-h_baseline_all_dataset",
+        default="/work/grana_urologia/MONKEY_challenge/outputs/cellvit_baseline/sam-h/predictions_sam-h_baseline_all_dataset",
         help="Directory with model predictions",
     )
     parser.add_argument(
@@ -450,13 +449,13 @@ def get_args():
     parser.add_argument(
         "--output_dir",
         type=str,
-        default="/work/grana_urologia/MONKEY_challenge/outputs/cellvit_baseline/json_preds",
+        default="/work/grana_urologia/MONKEY_challenge/outputs/cellvit_baseline/sam-h/json_preds",
         help="Directory to save output JSON predictions",
     )
     parser.add_argument(
         "--metrics_dir",
         type=str,
-        default="/work/grana_urologia/MONKEY_challenge/outputs/cellvit_baseline/scores",
+        default="/work/grana_urologia/MONKEY_challenge/outputs/cellvit_baseline/sam-h/scores",
         help="Directory to save evaluation scores",
     )
     parser.add_argument(
@@ -487,7 +486,7 @@ def main():
     print("Matching ground truth, predictions, and masks...")
     patient_data = match_preds_gts(preds_dir, gt_dir, mask_dir)
     # extract the patient IDs
-    patient_ids = list(patient_data.keys())
+    # patient_ids = list(patient_data.keys())
 
     # Evaluate the predictions on the n folds of the dataset
     # 0. load the metadata dataset
@@ -500,6 +499,8 @@ def main():
         balance_by=BALANCE_SPLIT_BY,
         seed=SEED,
     )
+
+    pprint(patients_fold_split_dict, indent=4)
 
     print("Matching done.\nProcessing predictions...")
 
