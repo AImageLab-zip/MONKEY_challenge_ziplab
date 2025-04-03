@@ -207,12 +207,6 @@ def save_final_asap_xml(xml_path, new_annotations, output_path):
     tree.write(output_path, encoding="utf-8", xml_declaration=True)
 
 
-import os
-import re
-
-from tqdm import tqdm
-
-
 def extract_patient_ids(xml_folder):
     """Extract unique patient IDs from filenames using '_' as a separator, removing .xml."""
     patient_ids = set()

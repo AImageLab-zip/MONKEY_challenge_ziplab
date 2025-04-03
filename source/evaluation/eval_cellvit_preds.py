@@ -382,19 +382,17 @@ def process_predictions(
                 preds_points = filter_points_openslide(
                     preds_points, roi_mask_path, region_size=3
                 )
+                print(f"Extracted {len(preds_points)} valid points from the mask")
 
-            if only_inflammatory:
+            try:
                 ann_mon, ann_lym, ann_infl = create_annotations(
                     preds_points,
-                    only_inflammatory=True,
+                    only_inflammatory=only_inflammatory,
                     fixed_z=fixed_z,
                 )
-            else:
-                ann_mon, ann_lym, ann_infl = create_annotations(
-                    preds_points,
-                    only_inflammatory=False,
-                    fixed_z=fixed_z,
-                )
+            except Exception as e:
+                print(f"[ERROR] Failed to create annotations: {e}")
+                ann_mon, ann_lym, ann_infl = {}, {}, {}
 
             for json_data, filename in zip(
                 [ann_mon, ann_lym, ann_infl],
@@ -407,7 +405,7 @@ def process_predictions(
                 out_path = os.path.join(patient_output_dir, f"{filename}")
                 with open(out_path, "w") as f:
                     json.dump(json_data, f, indent=2)
-                print(f"Saved {out_path}")
+                print(f"Predictions saved for patient {patient_id}")
 
             main_pbar.update(
                 1
@@ -471,6 +469,8 @@ def get_args():
 def main():
     args = get_args()
 
+    ONLY_INFLAMMATORY = True
+
     SEED = args.seed
     N_FOLDS = args.n_folds
     BALANCE_SPLIT_BY = args.balance_split_by
@@ -520,7 +520,12 @@ def main():
 
         # 2a. process the predictions for the current fold
         # Set only_inflammatory to True if predictions contain only the "Inflammatory" label.
-        process_predictions(fold_patient_data, fold_preds_dir, only_inflammatory=True)
+        process_predictions(
+            fold_patient_data, fold_preds_dir, only_inflammatory=ONLY_INFLAMMATORY
+        )
+        print(
+            f"All predictions for fold {fold_idx} processed and saved in {fold_preds_dir}"
+        )
 
         print(f"Processing metrics for fold {fold_idx}...")
 
@@ -565,9 +570,11 @@ def main():
     mean_froc_lym = np.mean(froc_scores_lym)
     std_froc_lym = np.std(froc_scores_lym)
 
+    print(f"{15*'='}\nAggregated FROC scores across all folds:")
     print(f"Mean FROC scores for inflammatory-cells: {mean_froc_inf} ± {std_froc_inf}")
     print(f"Mean FROC scores for monocytes: {mean_froc_mon} ± {std_froc_mon}")
     print(f"Mean FROC scores for lymphocytes: {mean_froc_lym} ± {std_froc_lym}")
+    print(f"{15*'='}")
 
     # save the results in a json file in the metrics_dir
     froc_scores = {
