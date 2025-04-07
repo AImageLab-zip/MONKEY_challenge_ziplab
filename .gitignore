@@ -15,6 +15,7 @@ cellvit_env
 
 ##launch files
 launch_job.sh
+launch_cpu_job.sh
 
 
 ##model checkpoints
