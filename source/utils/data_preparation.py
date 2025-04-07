@@ -881,7 +881,7 @@ def process_slide_cellvit(
 
 
 if __name__ == "__main__":
-    USE_IHC = False
+    USE_IHC = True
 
     # specify the output directory and the mapping of the groups to the labels
     output_dir = "/work/grana_urologia/MONKEY_challenge/data/monkey_cellvit_3_cls_ihc"
