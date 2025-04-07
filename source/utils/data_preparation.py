@@ -1,6 +1,5 @@
 import csv
 import glob
-import math
 
 # At module level, add the following helper function
 import os
@@ -10,14 +9,13 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import yaml
+from asap_parser import parse_asap_dot_annotations
+from logger import get_logger
 from sklearn.model_selection import KFold, StratifiedKFold
 from tqdm import tqdm
 from wholeslidedata.iterators import PatchConfiguration, create_patch_iterator
 
-from .asap_parser import parse_asap_dot_annotations
-from .config_parser import get_args_and_config
-from .dot2polygon import dot2polygon
-from .logger import get_logger
+# from .dot2polygon import dot2polygon
 
 
 # object to aid in data preparation of the Monkey Dataset
@@ -61,6 +59,8 @@ class DataPreparator:
 
         self.wsi_col = self.dataset_configs.get("wsi_col", "WSI PAS_CPG Path")
 
+        self.ihc_col = self.dataset_configs.get("ihc_col", "WSI IHC_CPG Path")
+
         self.wsa_col = self.dataset_configs.get("wsa_col", "Annotation Path")
 
         ## BOUNDING BOXES AND SPACING CONFIGS
@@ -89,41 +89,41 @@ class DataPreparator:
         self.dataset_df = None
         self.fold_yaml_paths_dict = {}
 
-    def create_bboxes_annots(self):
-        """
-        Create bounding boxes annotations from the XML annotations.
+    # def create_bboxes_annots(self):
+    #     """
+    #     Create bounding boxes annotations from the XML annotations.
 
-        return: 0 if successful, -1 if failed.
+    #     return: 0 if successful, -1 if failed.
 
-        """
+    #     """
 
-        annotation_list = glob.glob(os.path.join(self.annotation_dir, "*.xml"))
+    #     annotation_list = glob.glob(os.path.join(self.annotation_dir, "*.xml"))
 
-        if not (os.path.isdir(self.annotation_polygon_dir)):
-            os.mkdir(self.annotation_polygon_dir)
+    #     if not (os.path.isdir(self.annotation_polygon_dir)):
+    #         os.mkdir(self.annotation_polygon_dir)
 
-        loading_bar = tqdm(annotation_list, desc="Creating bounding boxes annotations")
+    #     loading_bar = tqdm(annotation_list, desc="Creating bounding boxes annotations")
 
-        for xml_path in loading_bar:
-            output_path = os.path.join(
-                self.annotation_polygon_dir,
-                os.path.splitext(os.path.basename(xml_path))[0]
-                + "_polygon"
-                + os.path.splitext(os.path.basename(xml_path))[1],
-            )
+    #     for xml_path in loading_bar:
+    #         output_path = os.path.join(
+    #             self.annotation_polygon_dir,
+    #             os.path.splitext(os.path.basename(xml_path))[0]
+    #             + "_polygon"
+    #             + os.path.splitext(os.path.basename(xml_path))[1],
+    #         )
 
-            dot2polygon(
-                xml_path,
-                self.lymphocyte_half_box_size,
-                self.monocyte_half_box_size,
-                self.min_spacing,
-                output_path,
-            )
+    #         dot2polygon(
+    #             xml_path,
+    #             self.lymphocyte_half_box_size,
+    #             self.monocyte_half_box_size,
+    #             self.min_spacing,
+    #             output_path,
+    #         )
 
-            loading_bar.set_postfix_str(output_path)
+    #         loading_bar.set_postfix_str(output_path)
 
-        print("Bounding boxes annotations created successfully.")
-        return 0
+    #     print("Bounding boxes annotations created successfully.")
+    #     return 0
 
     def create_dataset_df(self, bboxes=True):
         """
@@ -368,22 +368,22 @@ class DataPreparator:
 
         return self.dataset_df, self.fold_yaml_paths_dict
 
-    def prepare_data(self):
-        """
-        Prepare the data for the WSD task.
-        """
-        # 1. Create bounding boxes annotations
-        self.create_bboxes_annots()
+    # def prepare_data(self):
+    #     """
+    #     Prepare the data for the WSD task.
+    #     """
+    #     # 1. Create bounding boxes annotations
+    #     self.create_bboxes_annots()
 
-        # 2. Create and update the dataset dataframe
-        self.create_dataset_df(
-            bboxes=True
-        )  # create the df using bounding boxes annotations
+    #     # 2. Create and update the dataset dataframe
+    #     self.create_dataset_df(
+    #         bboxes=True
+    #     )  # create the df using bounding boxes annotations
 
-        # 3. Split the data into n folds and save to n .yml files in the specified directory
-        dataset_df, folds_paths_dict = self.split_and_save_kfold()
+    #     # 3. Split the data into n folds and save to n .yml files in the specified directory
+    #     dataset_df, folds_paths_dict = self.split_and_save_kfold()
 
-        return dataset_df, folds_paths_dict
+    #     return dataset_df, folds_paths_dict
 
     def prepare_data_points_annotations(self):
         # 1. Create the dataset dataframe using points annotations
@@ -407,6 +407,7 @@ class DataPreparator:
         cpus=4,
         shift_x=1,  # Shift each annotation 1 pixel in x-direction inside
         shift_y=1,  # Shift each annotation 1 pixel in y-direction inside
+        use_ihc=False,
     ):
         """
         Creates a CellViT-compatible dataset with boundary-clamping and dynamic annotation updates:
@@ -457,6 +458,9 @@ class DataPreparator:
         os.makedirs(os.path.join(test_dir, "images"), exist_ok=True)
         os.makedirs(os.path.join(test_dir, "labels"), exist_ok=True)
         # (test is empty by design)
+
+        if use_ihc:
+            self.wsi_col = self.ihc_col
 
         # 3) Prepare CSV writers for each fold
         unique_folds = sorted(self.dataset_df["fold_id"].unique().astype(int))
@@ -638,11 +642,14 @@ class DataPreparator:
         n_cpus_global=8,  # global CPU count available
         shift_x=1,
         shift_y=1,
+        use_ihc=False,
     ):
         # 1) Ensure folds exist
         self.prepare_data_points_annotations()
         if "fold_id" not in self.dataset_df.columns:
-            raise ValueError("No 'fold_id' in dataset_df. Did you run split_and_save_kfold()?")
+            raise ValueError(
+                "No 'fold_id' in dataset_df. Did you run split_and_save_kfold()?"
+            )
 
         # 2) Create folder structure (same as before)
         os.makedirs(output_dir, exist_ok=True)
@@ -658,6 +665,9 @@ class DataPreparator:
         os.makedirs(test_dir, exist_ok=True)
         os.makedirs(os.path.join(test_dir, "images"), exist_ok=True)
         os.makedirs(os.path.join(test_dir, "labels"), exist_ok=True)
+
+        if use_ihc:
+            self.wsi_col = self.ihc_col
 
         # 3) Prepare CSV writers per fold (same as before)
         unique_folds = sorted(self.dataset_df["fold_id"].unique().astype(int))
@@ -693,7 +703,9 @@ class DataPreparator:
         n_slides = len(rows)
         n_workers = min(n_slides, n_cpus_global)  # avoid oversubscription
         cpus_per_worker = max(1, n_cpus_global // n_workers)
-        self.logger.info(f"Using {n_workers} worker processes with {cpus_per_worker} cpus each.")
+        self.logger.info(
+            f"Using {n_workers} worker processes with {cpus_per_worker} cpus each."
+        )
 
         # 6) Process each slide in parallel using ProcessPoolExecutor
         all_patch_records = []  # holds tuples: (fold, patch_basename, role)
@@ -716,7 +728,9 @@ class DataPreparator:
                 )
                 for row in rows
             ]
-            for future in tqdm(as_completed(futures), total=len(futures), desc="Processing slides"):
+            for future in tqdm(
+                as_completed(futures), total=len(futures), desc="Processing slides"
+            ):
                 try:
                     patch_records = future.result()
                     all_patch_records.extend(patch_records)
@@ -747,10 +761,13 @@ class DataPreparator:
                 class_name = label_map_inverted[label_id]
                 f.write(f'{label_id}: "{class_name}"\n')
 
-        self.logger.info("CellViT dataset creation complete (with boundary clamp + dynamic updates).")
+        self.logger.info(
+            "CellViT dataset creation complete (with boundary clamp + dynamic updates)."
+        )
         self.logger.info(f"Output directory: {output_dir}")
-        self.logger.info(f"label_map.yaml saved with {len(label_map_inverted)} entries.")
-
+        self.logger.info(
+            f"label_map.yaml saved with {len(label_map_inverted)} entries."
+        )
 
 
 def process_slide_cellvit(
@@ -864,9 +881,43 @@ def process_slide_cellvit(
 
 
 if __name__ == "__main__":
-    args, config = get_args_and_config()
+    USE_IHC = True
 
-    print(config)
-    DataPrep = DataPreparator(config=config)
-    dataset_df, folds_paths_dict = DataPrep.prepare_data()
-    # create_bboxes_annots(config=config)
+    # specify the output directory and the mapping of the groups to the labels
+    output_dir = "/work/grana_urologia/MONKEY_challenge/data/monkey_cellvit_3_cls_ihc"
+    group_to_label = {"monocytes": 0, "lymphocytes": 1, "other": 2}
+
+    config = {
+        "project": {"seed": 42},
+        "dataset": {
+            "path": "/work/grana_urologia/MONKEY_challenge/data/monkey-data",
+            "wsi_col": "WSI PAS_CPG Path",
+            "ihc_col": "WSI IHC_CPG Path",
+            "wsa_col": "Annotation Path",
+            "lymphocyte_half_box_size": 4.5,
+            "monocyte_half_box_size": 5.0,
+            "min_spacing": 0.25,
+            "n_folds": 5,
+            "balance_by": None,
+            "num_bins_total_cells_count": 5,
+        },
+        "annotation_polygon_dir": "annotations_polygon",
+        "yaml_wsi_wsa_dir": "/work/grana_urologia/MONKEY_challenge/source/configs/splits",
+    }
+
+    data_prep = DataPreparator(config)
+
+    # create a CellVit plus plus finetune compatible dataset with the specified parameters
+
+    data_prep.create_cellvit_dataset_singlerow_parallel(
+        output_dir=output_dir,
+        group_to_label=group_to_label,
+        ignore_groups={"ROI"},
+        patch_shape=(256, 256, 3),
+        spacings=(0.24199951445730394,),
+        overlap=(0, 0),
+        offset=(0, 0),
+        center=False,
+        n_cpus_global=int(os.environ.get("SLURM_CPUS_PER_TASK", 16)),
+        use_ihc=USE_IHC,
+    )
