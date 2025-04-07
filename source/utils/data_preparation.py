@@ -731,11 +731,11 @@ class DataPreparator:
             for future in tqdm(
                 as_completed(futures), total=len(futures), desc="Processing slides"
             ):
-                try:
-                    patch_records = future.result()
-                    all_patch_records.extend(patch_records)
-                except Exception as e:
-                    self.logger.error(f"Error processing a slide: {e}")
+                # try:
+                patch_records = future.result()
+                all_patch_records.extend(patch_records)
+                # except Exception as e:
+                #     self.logger.error(f"Error processing a slide: {e}")
 
         # 7) Write patch registrations to the fold CSV files
         for fold, patch_basename, role in all_patch_records:
@@ -881,7 +881,7 @@ def process_slide_cellvit(
 
 
 if __name__ == "__main__":
-    USE_IHC = True
+    USE_IHC = False
 
     # specify the output directory and the mapping of the groups to the labels
     output_dir = "/work/grana_urologia/MONKEY_challenge/data/monkey_cellvit_3_cls_ihc"
