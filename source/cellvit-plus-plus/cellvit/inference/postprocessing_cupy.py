@@ -611,6 +611,9 @@ class BatchPoolingActor:
         self.detection_cell_postprocessor = detection_cell_postprocessor
         self.run_conf = run_conf
 
+    
+    #TODO: try to debug/fix-this when using a custom classifier!
+    # Throws a RuntimeError: stack expects a non-empty TensorList in the convert_batch_to_graph_nodes. That could mean the tokens are empty and we don't have any cells to classify
     def convert_batch_to_graph_nodes(
         self, predictions: dict, metadata: List[dict]
     ) -> Tuple[List[dict], List[dict], List[torch.Tensor], List[torch.Tensor]]:
@@ -644,7 +647,7 @@ class BatchPoolingActor:
         _, cell_dict_batch = self.detection_cell_postprocessor.post_process_batch(
             predictions
         )
-        tokens = predictions["tokens"].detach().to("cpu")
+        tokens = predictions["tokens"].detach().to("cpu") #tokens are extracted from the predictions dict passed in the method, so where do they come from?
 
         # print("Printing cupy post-processing preds:")
         # pprint(cell_dict_batch)
@@ -728,6 +731,8 @@ class BatchPoolingActor:
 
         return batch_complete, batch_detection, batch_cell_tokens, batch_cell_positions
 
+    # TODO: ISSUE - when using custom classifier the cell tokens produced here can be an empty list and throw a RuntimeError: stack expects a non-empty TensorList in the convert_batch_to_graph_nodes.
+    # But patch tokens are passed as the input of this method...
     def convert_patch_to_graph_nodes(
         self, patch_cell_dict: dict, patch_metadata: dict, patch_tokens: torch.Tensor
     ) -> Tuple[List[dict], List[dict], List[torch.Tensor], List[torch.Tensor]]:

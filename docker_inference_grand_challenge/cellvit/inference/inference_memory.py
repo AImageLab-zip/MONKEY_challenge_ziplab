@@ -163,6 +163,8 @@ class CellViTInferenceMemory(CellViTInference):
                         predictions = self.model.forward(patches, retrieve_tokens=True)
                 else:
                     predictions = self.model.forward(patches, retrieve_tokens=True)
+                    
+                #TODO: here we can check if the tokens are in the right format?
 
                 # print("Printing pre-softmax predictions")
                 # pprint(predictions)
