@@ -11,11 +11,9 @@
             "program": "${file}",
             "console": "integratedTerminal",
             "cwd": "${fileDirname}",
-            "args": [
-                "--debug",
-                "--fold=0",
-                "--config=./configs/debug/detectron2_debug.yml"
-            ]
+            // "args": [
+            //     "--debug",
+            // ]
         }
     ]
 }
