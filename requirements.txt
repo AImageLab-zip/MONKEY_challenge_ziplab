@@ -74,3 +74,7 @@ wandb==0.15.4
 wsidicom==0.20.4
 wsidicomizer==0.14.1
 xgboost==2.1.1
+openpyxl
+git+https://github.com/martvanrijthoven/dicfg
+git+https://github.com/DIAGNijmegen/pathology-whole-slide-data@main
+ijson

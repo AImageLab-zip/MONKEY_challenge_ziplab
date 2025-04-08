@@ -691,36 +691,6 @@ class BatchPoolingActor:
             for f, z in zip(batch_detection, updated_classes):
                 f["type"] = int(z)
 
-        # background_class = self.run_conf["dataset_config"]["nuclei_types"]["Background"]
-
-        # if self.detection_cell_postprocessor.classifier is not None:
-        #     if batch_cell_tokens:  # If there are valid cells to classify
-        #         batch_cell_tokens_pt = torch.stack(batch_cell_tokens)
-        #         updated_preds = self.detection_cell_postprocessor.classifier(
-        #             batch_cell_tokens_pt
-        #         )
-        #         updated_preds = F.softmax(updated_preds, dim=1)
-        #         updated_classes = torch.argmax(updated_preds, dim=1)
-        #         updated_class_probs = updated_preds[
-        #             torch.arange(updated_classes.shape[0]), updated_classes
-        #         ]
-
-        #         # Apply classification **only** to non-background cells
-        #         for i, f in enumerate(batch_complete):
-        #             if (
-        #                 f["type"] != background_class
-        #             ):  # Ensure we don't overwrite background
-        #                 f["type"] = int(updated_classes[i])
-        #                 f["type_prob"] = float(updated_class_probs[i])
-
-        #         for i, f in enumerate(batch_detection):
-        #             if (
-        #                 f["type"] != background_class
-        #             ):  # Ensure we don't overwrite background
-        #                 f["type"] = int(updated_classes[i])
-
-        #     else:
-        #         print("No valid cell tokens found; skipping classifier update.")
 
         if self.detection_cell_postprocessor.binary:
             for f in batch_complete:
