@@ -1,0 +1,66 @@
+[project]
+name = "monkey-challenge"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "albumentations",
+    "colorama",
+    "ctypes-snappy",
+    "cucim-cu12>=25.2.0",
+    "cupy-cuda12x",
+    "einops",
+    "evalutils",
+    "h5py",
+    "ijson",
+    "matplotlib",
+    "natsort",
+    "numba",
+    "numpy",
+    "opencv-python-headless",
+    "openpyxl",
+    "openslide-bin",
+    "openslide-python",
+    "pandarallel",
+    "pandas",
+    "pathopatch",
+    "pillow",
+    "pycaret",
+    "pycm",
+    "pydantic",
+    "pyvips",
+    "pyyaml",
+    "ray",
+    "requests",
+    "schema",
+    "scikit-image",
+    "scikit-learn",
+    "scipy",
+    "shapely",
+    "tabulate",
+    "tifffile",
+    "timm",
+    "torch>=2.5.1",
+    "torchaudio>=2.5.1",
+    "torchinfo",
+    "torchmetrics",
+    "torchstain",
+    "torchvision>=0.20.1",
+    "tqdm",
+    "typing-extensions",
+    "ujson",
+    "wandb",
+    "wholeslidedata",
+]
+
+[tool.uv.sources]
+wholeslidedata = { git = "https://github.com/DIAGNijmegen/pathology-whole-slide-data", rev = "main" }
+torch = { index = "pytorch-cu121" }
+torchvision = { index = "pytorch-cu121" }
+torchaudio = { index = "pytorch-cu121" }
+
+[[tool.uv.index]]
+name = "pytorch-cu121"
+url = "https://download.pytorch.org/whl/cu121"
+explicit = true

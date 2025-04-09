@@ -863,9 +863,13 @@ def process_slide_cellvit(
                 x_local = x_g - patch_x
                 y_local = y_g - patch_y
                 if 0 <= x_local < W and 0 <= y_local < H:
+                    x_local = round(x_local)
+                    y_local = round(y_local)
                     x_clamped, y_clamped = clamp(
                         x_local, y_local, W, H, shift_x, shift_y
                     )
+                    x_clamped = round(x_clamped)
+                    y_clamped = round(y_clamped)
                     patch_anns.append((x_clamped, y_clamped, label_id))
             with open(csv_path, mode="w", newline="") as cf:
                 writer = csv.writer(cf)
