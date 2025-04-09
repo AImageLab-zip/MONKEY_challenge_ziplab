@@ -1,0 +1,21 @@
+FOLD 0
+
+2025-04-03 17:53:10,336 [INFO] - Extracting training cells
+2025-04-03 18:03:55,412 [INFO] - Extraction detection metrics - F1: 0.738, Precision: 0.675, Recall: 0.894, Detected-Cells: 151834
+2025-04-03 18:05:53,730 [INFO] - Extracting validation cells
+2025-04-03 18:08:47,944 [INFO] - Extraction detection metrics - F1: 0.724, Precision: 0.662, Recall: 0.888, Detected-Cells: 36970
+
+FOLD 1
+
+
+
+FOLD 2
+
+
+
+FOLD 3
+
+
+
+FOLD 4
+
