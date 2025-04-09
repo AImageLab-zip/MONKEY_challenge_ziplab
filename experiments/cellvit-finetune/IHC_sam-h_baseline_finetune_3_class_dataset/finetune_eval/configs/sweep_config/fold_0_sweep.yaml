@@ -1,0 +1,61 @@
+logging:
+  mode: online
+  project: cellvit++
+  notes: cellvit++
+  log_comment: cellvit++ sam-h default sweep
+  wandb_dir: /work/grana_urologia/MONKEY_challenge/logs/Finetuning/IHC_sweep_default_values_fold_0
+  log_dir: /work/grana_urologia/MONKEY_challenge/logs/Finetuning/IHC_sweep_default_values_fold_0
+  level: Debug
+
+sweep:
+  method: bayes
+  name: finetune_IHC_baseline_sweep
+  metric:
+    goal: maximize
+    name: AUROC/Validation
+  run_cap: 100
+
+random_seed: 42
+gpu: 0
+
+data:
+  dataset: DetectionDataset
+  dataset_path: /work/grana_urologia/MONKEY_challenge/data/monkey_cellvit_3_cls_ihc
+  train_filelist: /work/grana_urologia/MONKEY_challenge/data/monkey_cellvit_3_cls_ihc/splits/fold_0/train.csv
+  val_filelist: /work/grana_urologia/MONKEY_challenge/data/monkey_cellvit_3_cls_ihc/splits/fold_0/val.csv
+  normalize_stains_train: false
+  normalize_stains_val: false
+  num_classes: 3
+label_map:
+    '0': monocytes
+    '1': lymphocytes
+    '2': other
+cellvit_path: /work/grana_urologia/MONKEY_challenge/checkpoints/SAM/CellViT-SAM-H-x40-AMP.pth
+
+model:
+  parameters:
+    hidden_dim:
+      values: [128, 256, 512]
+
+training:
+  cache_cell_dataset: true
+  batch_size: 64
+  epochs: 50
+  drop_rate: 0.3
+  optimizer: AdamW
+  optimizer_hyperparameter:
+    betas: [0.85, 0.9]
+    parameters:
+      lr:
+        min: 0.0001
+        max: 0.01
+      weight_decay:
+        min: 0.00001
+        max: 0.001
+  early_stopping_patience: 20
+  scheduler:
+    parameters:
+      scheduler_type:
+        values: [constant, exponential]
+  mixed_precision: true
+  eval_every: 1
