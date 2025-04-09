@@ -4,11 +4,11 @@ logging:
   notes: cellvit++
   log_comment: cellvit++ baseline finetuning
   wandb_dir: /work/grana_urologia/MONKEY_challenge/logs/Finetuning/ihc_baseline_finetuning/fold_3
-  log_dir: /work/grana_urologia/MONKEY_challenge/logs/Finetuning/ihc_baseline_finetuning/fold_3/2025-04-09T122356_cellvit++
+  log_dir: /work/grana_urologia/MONKEY_challenge/logs/Finetuning/ihc_baseline_finetuning/fold_3/2025-04-09T160800_cellvit++
     baseline finetuning
   level: Debug
-  run_id: rw6702f5
-  wandb_file: rw6702f5
+  run_id: uzhclgrw
+  wandb_file: uzhclgrw
 random_seed: 42
 gpu: 0
 data:
