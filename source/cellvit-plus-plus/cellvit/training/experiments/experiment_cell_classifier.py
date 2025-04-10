@@ -7,11 +7,11 @@
 
 import copy
 import datetime
+import os
 import shutil
 import uuid
 from pathlib import Path
-from typing import Callable, Literal, Tuple, Union, List
-import os
+from typing import Callable, List, Literal, Tuple, Union
 
 import albumentations as A
 import cv2
@@ -21,7 +21,22 @@ import wandb
 
 os.environ["WANDB__SERVICE_WAIT"] = "300"
 
+import random
+
+import numpy as np
 from albumentations.pytorch import ToTensorV2
+from torch.optim import Optimizer
+from torch.optim.lr_scheduler import (
+    ConstantLR,
+    CosineAnnealingLR,
+    ExponentialLR,
+    SequentialLR,
+    _LRScheduler,
+)
+from torch.utils.data import DataLoader, Dataset
+from torchinfo import summary
+from wandb.sdk.lib.runid import generate_id
+
 from cellvit.config.config import BACKBONE_EMBED_DIM, CELL_IMAGE_SIZES
 from cellvit.models.cell_segmentation.cellvit import CellViT
 from cellvit.models.cell_segmentation.cellvit_256 import CellViT256
@@ -35,45 +50,31 @@ from cellvit.training.base_ml.base_experiment import BaseExperiment
 from cellvit.training.base_ml.base_loss import retrieve_loss_fn
 from cellvit.training.base_ml.base_trainer import BaseTrainer
 from cellvit.training.datasets.consep import CoNSePDataset
-from cellvit.training.datasets.ocelot import OcelotDataset
-from cellvit.training.datasets.segpath import SegPathDataset
+from cellvit.training.datasets.detection_dataset import DetectionDataset
+from cellvit.training.datasets.lizard import LizardGraphDataset
 from cellvit.training.datasets.midog import MIDOGDataset
 from cellvit.training.datasets.nucls import NuCLSDataset
+from cellvit.training.datasets.ocelot import OcelotDataset
 from cellvit.training.datasets.panoptils import PanoptilsDataset
-from cellvit.training.datasets.lizard import LizardGraphDataset
-from cellvit.training.datasets.detection_dataset import DetectionDataset
 from cellvit.training.datasets.segmentation_dataset import SegmentationDataset
+from cellvit.training.datasets.segpath import SegPathDataset
 from cellvit.training.trainer.trainer_cell_classifier import CellViTHeadTrainer
-from cellvit.training.trainer.trainer_cell_classifier_segpath import (
-    CellViTHeadTrainerSegPath,
-)
-from cellvit.training.trainer.trainer_cell_classifier_midog import (
-    CellViTHeadTrainerMIDOG,
-)
 from cellvit.training.trainer.trainer_cell_classifier_lizard import (
     CellViTHeadTrainerLizard,
 )
 from cellvit.training.trainer.trainer_cell_classifier_lizard_preextracted import (
     CellViTHeadTrainerLizardPreextracted,
 )
+from cellvit.training.trainer.trainer_cell_classifier_midog import (
+    CellViTHeadTrainerMIDOG,
+)
 from cellvit.training.trainer.trainer_cell_classifier_nucls_label import (
     CellViTHeadTrainerNuCLSLabel,
 )
-
-from cellvit.utils.tools import close_logger, unflatten_dict
-from torch.optim import Optimizer
-from torch.optim.lr_scheduler import (
-    ConstantLR,
-    CosineAnnealingLR,
-    ExponentialLR,
-    SequentialLR,
-    _LRScheduler,
+from cellvit.training.trainer.trainer_cell_classifier_segpath import (
+    CellViTHeadTrainerSegPath,
 )
-from torch.utils.data import DataLoader, Dataset
-from torchinfo import summary
-from wandb.sdk.lib.runid import generate_id
-import numpy as np
-import random
+from cellvit.utils.tools import close_logger, unflatten_dict
 
 
 class ExperimentCellVitClassifier(BaseExperiment):
@@ -356,38 +357,62 @@ class ExperimentCellVitClassifier(BaseExperiment):
 
         return self.run_conf["logging"]["log_dir"]
 
+    # def get_loss_fn(
+    #     self,
+    #     weighted_sampling: bool = False,
+    #     weight_factor: int = 5,
+    #     weight_list: List[float] = None,
+    # ) -> Callable:
+    #     """Return loss function
+
+    #     Option for weighted CE. Either pass weight factor or weight list.
+
+    #     Args:
+    #         weighted_sampling (bool, optional): If weighted CE loss should be used. Defaults to False.
+    #         weight_factor (int, optional): Weight factor for binary classifcation for the second class. Defaults to 5.
+    #         weight_list (List[float], optional): Weight list for multiclass. Defaults to None.
+
+    #     Returns:
+    #         Callable: CrossEntropyLoss
+    #     """
+    #     if weighted_sampling:
+    #         if self.run_conf["data"]["dataset"].lower() in [
+    #             "lizard_preextracted",
+    #             "lizard",
+    #             "panoptils",
+    #         ]:
+    #             loss_fn = retrieve_loss_fn(
+    #                 "CrossEntropyLoss", weight=torch.Tensor(weight_list)
+    #             )
+    #         else:
+    #             class_weights = torch.Tensor([1 / weight_factor, 1])
+    #             loss_fn = retrieve_loss_fn("CrossEntropyLoss", weight=class_weights)
+    #     else:
+    #         loss_fn = retrieve_loss_fn("CrossEntropyLoss")
+    #     return loss_fn
+
     def get_loss_fn(
         self,
         weighted_sampling: bool = False,
         weight_factor: int = 5,
         weight_list: List[float] = None,
     ) -> Callable:
-        """Return loss function
-
-        Option for weighted CE. Either pass weight factor or weight list.
+        """
+        Return a CrossEntropyLoss function, optionally with class weights.
 
         Args:
-            weighted_sampling (bool, optional): If weighted CE loss should be used. Defaults to False.
-            weight_factor (int, optional): Weight factor for binary classifcation for the second class. Defaults to 5.
-            weight_list (List[float], optional): Weight list for multiclass. Defaults to None.
+            weighted_sampling (bool, optional): If True, applies weighted CE loss. Defaults to False.
+            weight_list (List[float], optional): List of weights for each class. Higher weight increases class importance.
 
         Returns:
-            Callable: CrossEntropyLoss
+            Callable: torch.nn.CrossEntropyLoss instance
         """
-        if weighted_sampling:
-            if self.run_conf["data"]["dataset"].lower() in [
-                "lizard_preextracted",
-                "lizard",
-                "panoptils",
-            ]:
-                loss_fn = retrieve_loss_fn(
-                    "CrossEntropyLoss", weight=torch.Tensor(weight_list)
-                )
-            else:
-                class_weights = torch.Tensor([1 / weight_factor, 1])
-                loss_fn = retrieve_loss_fn("CrossEntropyLoss", weight=class_weights)
+        if weighted_sampling and weight_list is not None:
+            weight_tensor = torch.tensor(weight_list, dtype=torch.float32)
+            loss_fn = retrieve_loss_fn("CrossEntropyLoss", weight=weight_tensor)
         else:
             loss_fn = retrieve_loss_fn("CrossEntropyLoss")
+
         return loss_fn
 
     def get_scheduler(self, scheduler_type: str, optimizer: Optimizer) -> _LRScheduler:

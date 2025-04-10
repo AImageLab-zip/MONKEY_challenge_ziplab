@@ -215,7 +215,7 @@ MPP_LEVEL0_VALUE = 0.24199951445730394
 FILTERING_THRESHOLD = (
     3.5  # threshold im micrometers to filter out eventual overlapping detections
 )
-PROB_THRESHOLD = 0.5  # threshold for filtering out low probability detections
+PROB_THRESHOLD = 0  # threshold for filtering out low probability detections
 INPUT_SHAPE_2D = (256, 256)
 INPUT_SHAPE_3D = (256, 256, 3)
 SPACINGS = (0.25,)
@@ -223,7 +223,8 @@ OVERLAP = (0, 0)
 OFFSET = (0, 0)
 CENTER = False
 
-DOCKER_INFERENCE = True # NOTE: Set to False if running locally without Docker
+DOCKER_INFERENCE = False  # NOTE: Set to False if running locally without Docker
+
 
 def run():
     print("Checking environment...")

@@ -356,38 +356,62 @@ class ExperimentCellVitClassifier(BaseExperiment):
 
         return self.run_conf["logging"]["log_dir"]
 
+    # def get_loss_fn(
+    #     self,
+    #     weighted_sampling: bool = False,
+    #     weight_factor: int = 5,
+    #     weight_list: List[float] = None,
+    # ) -> Callable:
+    #     """Return loss function
+
+    #     Option for weighted CE. Either pass weight factor or weight list.
+
+    #     Args:
+    #         weighted_sampling (bool, optional): If weighted CE loss should be used. Defaults to False.
+    #         weight_factor (int, optional): Weight factor for binary classifcation for the second class. Defaults to 5.
+    #         weight_list (List[float], optional): Weight list for multiclass. Defaults to None.
+
+    #     Returns:
+    #         Callable: CrossEntropyLoss
+    #     """
+    #     if weighted_sampling:
+    #         if self.run_conf["data"]["dataset"].lower() in [
+    #             "lizard_preextracted",
+    #             "lizard",
+    #             "panoptils",
+    #         ]:
+    #             loss_fn = retrieve_loss_fn(
+    #                 "CrossEntropyLoss", weight=torch.Tensor(weight_list)
+    #             )
+    #         else:
+    #             class_weights = torch.Tensor([1 / weight_factor, 1])
+    #             loss_fn = retrieve_loss_fn("CrossEntropyLoss", weight=class_weights)
+    #     else:
+    #         loss_fn = retrieve_loss_fn("CrossEntropyLoss")
+    #     return loss_fn
+
     def get_loss_fn(
         self,
         weighted_sampling: bool = False,
         weight_factor: int = 5,
         weight_list: List[float] = None,
     ) -> Callable:
-        """Return loss function
-
-        Option for weighted CE. Either pass weight factor or weight list.
+        """
+        Return a CrossEntropyLoss function, optionally with class weights.
 
         Args:
-            weighted_sampling (bool, optional): If weighted CE loss should be used. Defaults to False.
-            weight_factor (int, optional): Weight factor for binary classifcation for the second class. Defaults to 5.
-            weight_list (List[float], optional): Weight list for multiclass. Defaults to None.
+            weighted_sampling (bool, optional): If True, applies weighted CE loss. Defaults to False.
+            weight_list (List[float], optional): List of weights for each class. Higher weight increases class importance.
 
         Returns:
-            Callable: CrossEntropyLoss
+            Callable: torch.nn.CrossEntropyLoss instance
         """
-        if weighted_sampling:
-            if self.run_conf["data"]["dataset"].lower() in [
-                "lizard_preextracted",
-                "lizard",
-                "panoptils",
-            ]:
-                loss_fn = retrieve_loss_fn(
-                    "CrossEntropyLoss", weight=torch.Tensor(weight_list)
-                )
-            else:
-                class_weights = torch.Tensor([1 / weight_factor, 1])
-                loss_fn = retrieve_loss_fn("CrossEntropyLoss", weight=class_weights)
+        if weighted_sampling and weight_list is not None:
+            weight_tensor = torch.tensor(weight_list, dtype=torch.float32)
+            loss_fn = retrieve_loss_fn("CrossEntropyLoss", weight=weight_tensor)
         else:
             loss_fn = retrieve_loss_fn("CrossEntropyLoss")
+
         return loss_fn
 
     def get_scheduler(self, scheduler_type: str, optimizer: Optimizer) -> _LRScheduler:
