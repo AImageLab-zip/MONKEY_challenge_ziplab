@@ -1,0 +1,112 @@
+{
+    "folds": {
+        "fold_0": {
+            "train": {
+                "f1": 0.738,
+                "precision": 0.675,
+                "recall": 0.894,
+                "detected_cells": 151841
+            },
+            "val": {
+                "f1": 0.723,
+                "precision": 0.661,
+                "recall": 0.888,
+                "detected_cells": 36970
+            }
+        },
+        "fold_1": {
+            "train": {
+                "f1": 0.736,
+                "precision": 0.672,
+                "recall": 0.895,
+                "detected_cells": 152532
+            },
+            "val": {
+                "f1": 0.73,
+                "precision": 0.67,
+                "recall": 0.881,
+                "detected_cells": 36282
+            }
+        },
+        "fold_2": {
+            "train": {
+                "f1": 0.734,
+                "precision": 0.67,
+                "recall": 0.895,
+                "detected_cells": 144494
+            },
+            "val": {
+                "f1": 0.739,
+                "precision": 0.681,
+                "recall": 0.885,
+                "detected_cells": 44320
+            }
+        },
+        "fold_3": {
+            "train": {
+                "f1": 0.737,
+                "precision": 0.674,
+                "recall": 0.894,
+                "detected_cells": 156464
+            },
+            "val": {
+                "f1": 0.725,
+                "precision": 0.662,
+                "recall": 0.888,
+                "detected_cells": 32331
+            }
+        },
+        "fold_4": {
+            "train": {
+                "f1": 0.73,
+                "precision": 0.669,
+                "recall": 0.886,
+                "detected_cells": 149898
+            },
+            "val": {
+                "f1": 0.756,
+                "precision": 0.684,
+                "recall": 0.92,
+                "detected_cells": 38897
+            }
+        }
+    },
+    "aggregated": {
+        "train": {
+            "f1": {
+                "mean": 0.735,
+                "std": 0.0027
+            },
+            "precision": {
+                "mean": 0.672,
+                "std": 0.0021
+            },
+            "recall": {
+                "mean": 0.893,
+                "std": 0.0035
+            },
+            "detected_cells": {
+                "mean": 151845.8,
+                "std": 4215.4
+            }
+        },
+        "val": {
+            "f1": {
+                "mean": 0.735,
+                "std": 0.0122
+            },
+            "precision": {
+                "mean": 0.6716,
+                "std": 0.0082
+            },
+            "recall": {
+                "mean": 0.8924,
+                "std": 0.0131
+            },
+            "detected_cells": {
+                "mean": 37760.0,
+                "std": 4051.6
+            }
+        }
+    }
+}
