@@ -2,9 +2,9 @@ logging:
   mode: online
   project: cellvit++
   notes: cellvit++
-  log_comment: cellvit++ baseline finetuning
-  wandb_dir: /work/grana_urologia/MONKEY_challenge/logs/Finetuning/baseline_finetuning/fold_4
-  log_dir: /work/grana_urologia/MONKEY_challenge/logs/Finetuning/baseline_finetuning/fold_4
+  log_comment: cellvit++ weighted classes finetuning
+  wandb_dir: /work/grana_urologia/MONKEY_challenge/logs/Finetuning/weighted_classes_finetuning/fold_4
+  log_dir: /work/grana_urologia/MONKEY_challenge/logs/Finetuning/weighted_classes_finetuning/fold_4
   level: Debug
 
 random_seed: 42

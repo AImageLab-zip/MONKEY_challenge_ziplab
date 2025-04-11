@@ -2,14 +2,15 @@ logging:
   mode: online
   project: cellvit++
   notes: cellvit++
-  log_comment: cellvit++ weighted classes finetuning
-  wandb_dir: /work/grana_urologia/MONKEY_challenge/logs/Finetuning/weighted_classes_finetuning/fold_3
-  log_dir: /work/grana_urologia/MONKEY_challenge/logs/Finetuning/weighted_classes_finetuning/fold_3
+  log_comment: cellvit++ baseline finetuning
+  wandb_dir: /work/grana_urologia/MONKEY_challenge/logs/Finetuning/baseline_finetuning/fold_3
+  log_dir: /work/grana_urologia/MONKEY_challenge/logs/Finetuning/baseline_finetuning/fold_3/2025-04-10T175451_cellvit++
+    baseline finetuning
   level: Debug
-
+  run_id: qf4rd8to
+  wandb_file: qf4rd8to
 random_seed: 42
 gpu: 0
-
 data:
   dataset: DetectionDataset
   dataset_path: /work/grana_urologia/MONKEY_challenge/data/monkey_cellvit_3_cls_parallel
@@ -19,15 +20,12 @@ data:
   normalize_stains_val: false
   num_classes: 3
   label_map:
-      '0': monocytes
-      '1': lymphocytes
-      '2': other
-
+    '0': monocytes
+    '1': lymphocytes
+    '2': other
 cellvit_path: /work/grana_urologia/MONKEY_challenge/checkpoints/SAM/CellViT-SAM-H-x40-AMP.pth
-
 model:
   hidden_dim: 128
-
 training:
   cache_cell_dataset: true
   batch_size: 64
@@ -46,7 +44,10 @@ training:
   scheduler:
     scheduler_type: exponential
   weighted_sampling: true
-  weight_list: [2.57, 1.25, 0.50]
-
+  weight_list:
+  - 2.57
+  - 1.25
+  - 0.5
 just_load_model: false
-
+run_sweep: false
+agent: null
