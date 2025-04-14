@@ -41,6 +41,10 @@ challenge_example_code/*
 # backbone weights
 docker_inference_grand_challenge/resources/backbones/*/*.pth
 
+#generated temporary .xml files
+
+source/scripts/*.xml
+
 
 #temp source folder architectures repositories
 
