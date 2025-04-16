@@ -142,8 +142,8 @@ def points_to_xml(points, patient_id, label_mapping, output_dir=".", prob_cutoff
         label_name = label_mapping.get(label_num, "unknown")
         annotation_attrib = {
             "Name": point.get("name", "unnamed"),
-            "PartOfGroup": f"detected-{label_name}",
             "Type": "Dot",
+            "PartOfGroup": f"{label_name}",
             "Color": COLOR_MAPPING.get(label_name, "#000000"),
         }
         annotation_elem = ET.SubElement(

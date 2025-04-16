@@ -42,7 +42,9 @@ class DataPreparator:
 
         self.dataset_dir = self.dataset_configs.get("path", "../data/monkey-data")
         self.annotation_dir = os.path.join(
-            self.dataset_dir, "annotations", "xml_3_classes"
+            self.dataset_dir,
+            "annotations",
+            "instanseg_3_classes_xml_annotations_all_wsi",
         )  # changed this for 3 classes
         # self.json_px_dir = os.path.join(self.dataset_dir, "annotations", "json_pixel")
 
@@ -643,6 +645,7 @@ class DataPreparator:
         shift_x=1,
         shift_y=1,
         use_ihc=False,
+        use_mask=False,
     ):
         # 1) Ensure folds exist
         self.prepare_data_points_annotations()
@@ -725,6 +728,7 @@ class DataPreparator:
                     self.wsa_col,
                     group_to_label,
                     ignore_groups,
+                    use_mask=use_mask,
                 )
                 for row in rows
             ]
@@ -783,6 +787,7 @@ def process_slide_cellvit(
     wsa_col,
     group_to_label,
     ignore_groups,
+    use_mask=False,
 ):
     """
     Process one slide:
@@ -807,7 +812,7 @@ def process_slide_cellvit(
         return []
     wsi_path = row.get(wsi_col)
     xml_path = row.get(wsa_col)
-    mask_path = row.get("WSI Mask Path")
+    mask_path = row.get("WSI Mask Path") if use_mask else None
     results = []  # list of tuples: (fold, patch_basename, role)
 
     if not wsi_path or not isinstance(wsi_path, str) or not os.path.isfile(wsi_path):
@@ -885,10 +890,11 @@ def process_slide_cellvit(
 
 
 if __name__ == "__main__":
-    USE_IHC = True
+    USE_IHC = False
+    USE_MASK = False
 
     # specify the output directory and the mapping of the groups to the labels
-    output_dir = "/work/grana_urologia/MONKEY_challenge/data/monkey_cellvit_3_cls_ihc"
+    output_dir = "/work/grana_urologia/MONKEY_challenge/data/monkey_cellvit_full_3_cls_instanseg_annotated"
     group_to_label = {"monocytes": 0, "lymphocytes": 1, "other": 2}
 
     config = {
@@ -924,4 +930,5 @@ if __name__ == "__main__":
         center=False,
         n_cpus_global=int(os.environ.get("SLURM_CPUS_PER_TASK", 16)),
         use_ihc=USE_IHC,
+        use_mask=USE_MASK,
     )
