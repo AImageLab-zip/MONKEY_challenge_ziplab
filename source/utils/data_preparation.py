@@ -646,6 +646,7 @@ class DataPreparator:
             f"label_map.yaml saved with {len(label_map_inverted)} entries."
         )
 
+
     def process_slide_cellvit(
         self,
         row,
@@ -668,8 +669,15 @@ class DataPreparator:
         - Otherwise, create the patch iterator, save patch images (if not already saved),
         create CSV annotation files (if needed), and for each patch return a list of
         tuples (fold, patch_basename, role) where role is "train" or "val".
-        Skips empty patches.
+        Skips empty patches, reporting via tqdm.
         """
+        import csv
+        import os
+
+        import matplotlib.pyplot as plt
+        from asap_parser import parse_asap_dot_annotations
+        from tqdm import tqdm
+        from wholeslidedata.iterators import PatchConfiguration, create_patch_iterator
 
         def clamp(x, y, width, height, sx, sy):
             x_shifted = max(0, min(x + sx, width - 1))
@@ -700,7 +708,6 @@ class DataPreparator:
                 ignore_groups=ignore_groups,
             )
             print(f"[{slide_id}] Found {len(annotations)} annotations.")
-            #print(annotations[:10])
         else:
             annotations = []
             print(f"[{slide_id}] No XML => empty annotation list.")
@@ -716,24 +723,31 @@ class DataPreparator:
         print("Creating patch iterator...")
         patch_iterator = create_patch_iterator(
             image_path=wsi_path,
-            mask_path=(
-                mask_path if (mask_path and os.path.isfile(mask_path)) else None
-            ),
+            mask_path=(mask_path if (mask_path and os.path.isfile(mask_path)) else None),
             patch_configuration=patch_config,
             cpus=patch_cpus,
             backend="asap" if use_mask else "openslide",
         )
+
+        # Get total for tqdm
+        try:
+            total_patches = len(patch_iterator)
+        except TypeError:
+            total_patches = None
+
         print(
             f"[{slide_id}] Processing {len(annotations)} annotations in "
-            f"{len(patch_iterator)} patches..."
+            f"{total_patches or '?'} patches..."
         )
 
-        for idx_patch, (patch_datainfo) in enumerate(patch_iterator):
-            patch_data, _, info = (
-                patch_datainfo if use_mask else patch_datainfo[0],
-                None,
-                patch_datainfo[1],
-            )
+        for idx_patch, patch_datainfo in enumerate(
+            tqdm(patch_iterator, total=total_patches, desc=f"{slide_id} patches")
+        ):
+            # unpack depending on use_mask
+            if use_mask:
+                patch_data, _, info = patch_datainfo
+            else:
+                patch_data, info = patch_datainfo
             H, W, _ = info["tile_shape"]
             patch_x, patch_y = info["x"], info["y"]
 
@@ -750,6 +764,7 @@ class DataPreparator:
 
             # skip empty patches
             if not patch_anns:
+                #tqdm.write(f"[{slide_id}] Skipped patch {idx_patch} (no annotations)")
                 continue
 
             patch_basename = f"{slide_id}_{idx_patch}"
@@ -758,7 +773,7 @@ class DataPreparator:
 
             # (A) Save patch image if not exists
             if not os.path.isfile(img_path):
-                # print(f"[{slide_id}] Saving patch image: {img_path}")
+                #print(f"[{slide_id}] Saving patch image: {img_path}")
                 plt.imsave(img_path, patch_data.squeeze().astype("uint8"))
 
             # (B) Create patch annotation CSV
