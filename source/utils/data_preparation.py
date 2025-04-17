@@ -897,10 +897,17 @@ class DataPreparator:
             img_path = os.path.join(train_images_dir, patch_name + ".png")
             csv_path = os.path.join(train_labels_dir, patch_name + ".csv")
 
-            # save image once, using cv2
+            # save image once, using cv2, converting channels if needed
             if not os.path.isfile(img_path):
                 # tqdm.write(f"[{slide_id}] Saving patch {idx}")
-                cv2.imwrite(str(img_path), patch_data.squeeze())
+                patch_img = patch_data.squeeze()
+                # if channels‐first (C,H,W) → HWC
+                if patch_img.ndim == 3 and patch_img.shape[0] in (1, 3):
+                    patch_img = np.moveaxis(patch_img, 0, 2)
+                # convert RGB→BGR for OpenCV
+                if patch_img.ndim == 3 and patch_img.shape[2] == 3:
+                    patch_img = patch_img[..., ::-1]
+                cv2.imwrite(str(img_path), patch_img)
 
             # dump CSV with numpy.savetxt
             coords_and_labels = np.stack([xs_clamped, ys_clamped, labels], axis=1)
