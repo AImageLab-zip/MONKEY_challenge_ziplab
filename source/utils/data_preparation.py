@@ -468,7 +468,7 @@ class DataPreparator:
         rows = self.dataset_df.to_dict("records")
         for row in tqdm(rows, desc="Creating CellViT Dataset"):
             # process one slide
-            records = self.process_slide_cellvit(
+            records = self.process_slide_cellvit_optimized_cv(
                 row,
                 patch_params,
                 cpus,
@@ -589,7 +589,7 @@ class DataPreparator:
         with ProcessPoolExecutor(max_workers=n_workers) as executor:
             futures = [
                 executor.submit(
-                    self.process_slide_cellvit,
+                    self.process_slide_cellvit_optimized_cv,
                     row,
                     patch_params,
                     cpus_per_worker,  # assign per-worker cpus here
@@ -671,13 +671,6 @@ class DataPreparator:
         tuples (fold, patch_basename, role) where role is "train" or "val".
         Skips empty patches, reporting via tqdm.
         """
-        import csv
-        import os
-
-        import matplotlib.pyplot as plt
-        from asap_parser import parse_asap_dot_annotations
-        from tqdm import tqdm
-        from wholeslidedata.iterators import PatchConfiguration, create_patch_iterator
 
         def clamp(x, y, width, height, sx, sy):
             x_shifted = max(0, min(x + sx, width - 1))
@@ -792,231 +785,359 @@ class DataPreparator:
         del patch_iterator
         return results
 
-    def process_slide_cellvit_threaded(
+    def process_slide_cellvit_optimized_cv(
         self,
-        row: Dict[str, Any],
-        patch_params: Dict[str, Any],
-        patch_threads: int,
-        shift_x: int,
-        shift_y: int,
-        train_images_dir: str,
-        train_labels_dir: str,
-        unique_folds: List[int],
-        wsi_col: str,
-        wsa_col: str,
-        group_to_label: Dict[str, int],
-        ignore_groups: set,
-        use_mask: bool = False,
-    ) -> List[Tuple[int, str, str]]:
+        row,
+        patch_params,
+        patch_cpus,
+        shift_x,
+        shift_y,
+        train_images_dir,
+        train_labels_dir,
+        unique_folds,
+        wsi_col,
+        wsa_col,
+        group_to_label,
+        ignore_groups,
+        use_mask=False,
+    ):
         """
-        Slide‐level: generate patches, skip empty, write image+CSV with integer coords
-        via a small ThreadPool. Returns list of (fold, basename, role).
+        Same logic as before, but:
+         - vectorize annotation lookup with NumPy
+         - use cv2.imwrite for speed
+         - use numpy.savetxt to dump CSV
         """
 
-        slide_id = row["Slide ID"]
+        def clamp(arr, low, high):
+            return np.minimum(np.maximum(arr, low), high)
+
+        slide_id = row.get("Slide ID")
         try:
-            val_fold = int(row["fold_id"])
-        except Exception:
-            tqdm.write(f"[{slide_id}] Invalid fold_id, skipping.")
+            val_fold_id = int(row.get("fold_id"))
+        except (ValueError, TypeError):
+            print(f"[{slide_id}] Invalid fold_id, skipping.")
             return []
 
-        wsi_path = row.get(wsi_col, "")
-        if not os.path.isfile(wsi_path):
-            tqdm.write(f"[{slide_id}] Missing WSI => 0 patches.")
+        wsi_path = row.get(wsi_col)
+        xml_path = row.get(wsa_col)
+        if not (isinstance(wsi_path, str) and os.path.isfile(wsi_path)):
+            print(f"[{slide_id}] Missing WSI => 0 patches generated.")
             return []
 
-        xml_path = row.get(wsa_col, "")
+        # parse all annotations once
         if xml_path and os.path.isfile(xml_path):
-            tqdm.write(f"[{slide_id}] Found XML: {xml_path}")
-            annots = parse_asap_dot_annotations(xml_path, group_to_label, ignore_groups)
-            tqdm.write(f"[{slide_id}] {len(annots)} annotations")
+            annotations = parse_asap_dot_annotations(
+                xml_path=xml_path,
+                group_to_label=group_to_label,
+                ignore_groups=ignore_groups,
+            )
+            print(
+                f"[{slide_id}] Found {len(annotations)} annotations; sample: {annotations[:5]}"
+            )
+            ann_arr = np.array(annotations, dtype=float)  # shape (N,3)
         else:
-            annots = []
-            tqdm.write(f"[{slide_id}] No XML => empty annotation list.")
+            annotations = []
+            ann_arr = np.zeros((0, 3), dtype=float)
+            print(f"[{slide_id}] No XML => empty annotation list.")
 
-        cfg = PatchConfiguration(**patch_params)
-        tqdm.write(f"[{slide_id}] Creating patch iterator…")
-        iterator = create_patch_iterator(
+        xs = ann_arr[:, 0]  # global X
+        ys = ann_arr[:, 1]  # global Y
+        lids = ann_arr[:, 2].astype(int)
+
+        # build patch iterator
+        patch_config = PatchConfiguration(
+            patch_shape=patch_params["patch_shape"],
+            spacings=patch_params["spacings"],
+            overlap=patch_params["overlap"],
+            offset=patch_params["offset"],
+            center=patch_params["center"],
+        )
+        print("Creating patch iterator…")
+        patch_iterator = create_patch_iterator(
             image_path=wsi_path,
-            mask_path=(
-                row.get("WSI Mask Path")
-                if use_mask and os.path.isfile(row.get("WSI Mask Path", ""))
-                else None
-            ),
-            patch_configuration=cfg,
-            cpus=patch_threads,
-            backend="openslide",
+            mask_path=(row.get("WSI Mask Path") if use_mask else None),
+            patch_configuration=patch_config,
+            cpus=patch_cpus,
+            backend="asap" if use_mask else "openslide",
         )
         try:
-            total_patches = len(iterator)
+            total = len(patch_iterator)
         except TypeError:
-            total_patches = None
-        tqdm.write(f"[{slide_id}] Scanning ~{total_patches or '?'} patches")
+            total = None
+        print(f"[{slide_id}] Scanning {total or '?'} patches…")
 
         results = []
-        written = set()
+        for idx, patch_datainfo in enumerate(
+            tqdm(patch_iterator, total=total, desc=f"{slide_id} patches")
+        ):
+            # unpack depending on use_mask
 
-        def clamp(x, y, W, H):
-            return max(0, min(int(x + shift_x), W - 1)), max(
-                0, min(int(y + shift_y), H - 1)
-            )
-
-        def handle_patch(idx: int, info) -> List[Tuple[int, str, str]]:
             if use_mask:
-                data, _, meta = info
+                patch_data, _, info = patch_datainfo
             else:
-                data, meta = info
-            H, W = meta["tile_shape"]
-            x0, y0 = meta["x"], meta["y"]
-            local = []
-            for xg, yg, lid in annots:
-                dx, dy = xg - x0, yg - y0
-                if 0 <= dx < W and 0 <= dy < H:
-                    xi, yi = round(dx), round(dy)
-                    xc, yc = clamp(xi, yi, W, H)
-                    local.append((xc, yc, lid))
-            if not local:
-                return []
+                patch_data, info = patch_datainfo
 
-            base = f"{slide_id}_{idx}"
-            img_p = os.path.join(train_images_dir, base + ".png")
-            csv_p = os.path.join(train_labels_dir, base + ".csv")
+            H, W, _ = info["tile_shape"]
+            x0, y0 = info["x"], info["y"]
 
-            if img_p not in written:
-                written.add(img_p)
-                arr = data.squeeze().astype("uint8")
-                if arr.ndim == 3 and arr.shape[-1] == 3:
-                    arr = arr[..., ::-1]
-                cv2.imwrite(img_p, arr)
+            # vectorized in‐bounds test
+            mask = (xs >= x0) & (xs < x0 + W) & (ys >= y0) & (ys < y0 + H)
+            if not np.any(mask):
+                # tqdm.write(f"[{slide_id}] Skipped patch {idx} (no annotations)")
+                continue
 
-            with open(csv_p, "w", newline="") as cf:
-                writer = csv.writer(cf)
-                for xc, yc, lid in local:
-                    writer.writerow([xc, yc, lid])
+            # compute local + shifted + clamped coords
+            xs_local = np.rint(xs[mask] - x0).astype(int) + shift_x
+            ys_local = np.rint(ys[mask] - y0).astype(int) + shift_y
+            xs_clamped = clamp(xs_local, 0, W - 1)
+            ys_clamped = clamp(ys_local, 0, H - 1)
+            labels = lids[mask].astype(int)
 
-            recs = []
+            patch_name = f"{slide_id}_{idx}"
+            img_path = os.path.join(train_images_dir, patch_name + ".png")
+            csv_path = os.path.join(train_labels_dir, patch_name + ".csv")
+
+            # save image once, using cv2
+            if not os.path.isfile(img_path):
+                # tqdm.write(f"[{slide_id}] Saving patch {idx}")
+                cv2.imwrite(str(img_path), patch_data.squeeze())
+
+            # dump CSV with numpy.savetxt
+            coords_and_labels = np.stack([xs_clamped, ys_clamped, labels], axis=1)
+            np.savetxt(csv_path, coords_and_labels, fmt="%d", delimiter=",")
+
+            # register
             for f in unique_folds:
-                recs.append((f, base, "val" if f == val_fold else "train"))
-            return recs
-
-        futures = []
-        with ThreadPoolExecutor(max_workers=patch_threads) as pool:
-            for idx, info in enumerate(
-                tqdm(iterator, total=total_patches, desc=f"{slide_id} patches")
-            ):
-                futures.append(pool.submit(handle_patch, idx, info))
-            for fut in tqdm(
-                as_completed(futures), total=len(futures), desc=f"{slide_id} writes"
-            ):
-                results.extend(fut.result())
+                role = "val" if f == val_fold_id else "train"
+                results.append((f, patch_name, role))
 
         return results
 
-    def create_cellvit_dataset_threaded(
-        self,
-        output_dir: str,
-        group_to_label: Dict[str, int] = {"monocytes": 0, "lymphocytes": 1, "other": 2},
-        ignore_groups: set = {"ROI"},
-        patch_shape: Tuple[int, int, int] = (256, 256, 3),
-        spacings: Tuple[float, ...] = (0.24199951445730394,),
-        overlap: Tuple[int, int] = (0, 0),
-        offset: Tuple[int, int] = (0, 0),
-        center: bool = False,
-        slide_workers: int = None,
-        patch_threads: int = None,
-        shift_x: int = 1,
-        shift_y: int = 1,
-        use_ihc: bool = False,
-        use_mask: bool = False,
-    ) -> None:
-        """
-        Parallel‐by‐slide version: dispatch each slide to a ProcessPool, within which
-        patches are threaded. Writes train/val CSVs and label_map.yaml.
-        """
-        # prepare folds & dataframe
-        self.prepare_data_points_annotations()
-        if "fold_id" not in self.dataset_df:
-            raise ValueError("No 'fold_id' in df; run split_and_save_kfold() first.")
+    # def process_slide_cellvit_threaded(
+    #     self,
+    #     row: Dict[str, Any],
+    #     patch_params: Dict[str, Any],
+    #     patch_threads: int,
+    #     shift_x: int,
+    #     shift_y: int,
+    #     train_images_dir: str,
+    #     train_labels_dir: str,
+    #     unique_folds: List[int],
+    #     wsi_col: str,
+    #     wsa_col: str,
+    #     group_to_label: Dict[str, int],
+    #     ignore_groups: set,
+    #     use_mask: bool = False,
+    # ) -> List[Tuple[int, str, str]]:
+    #     """
+    #     Slide‐level: generate patches, skip empty, write image+CSV with integer coords
+    #     via a small ThreadPool. Returns list of (fold, basename, role).
+    #     """
 
-        # build dirs
-        os.makedirs(output_dir, exist_ok=True)
-        splits = os.path.join(output_dir, "splits")
-        os.makedirs(splits, exist_ok=True)
-        train = os.path.join(output_dir, "train")
-        os.makedirs(train, exist_ok=True)
-        imgs = os.path.join(train, "images")
-        os.makedirs(imgs, exist_ok=True)
-        labels = os.path.join(train, "labels")
-        os.makedirs(labels, exist_ok=True)
-        test = os.path.join(output_dir, "test")
-        os.makedirs(test, exist_ok=True)
-        os.makedirs(os.path.join(test, "images"), exist_ok=True)
-        os.makedirs(os.path.join(test, "labels"), exist_ok=True)
-        if use_ihc:
-            self.wsi_col = self.ihc_col
+    #     slide_id = row["Slide ID"]
+    #     try:
+    #         val_fold = int(row["fold_id"])
+    #     except Exception:
+    #         tqdm.write(f"[{slide_id}] Invalid fold_id, skipping.")
+    #         return []
 
-        # csv writers
-        folds = sorted(self.dataset_df["fold_id"].unique().astype(int))
-        writers = {}
-        for f in folds:
-            d = os.path.join(splits, f"fold_{f}")
-            os.makedirs(d, exist_ok=True)
-            t = open(os.path.join(d, "train.csv"), "w", newline="")
-            v = open(os.path.join(d, "val.csv"), "w", newline="")
-            writers[f] = {"train": csv.writer(t), "val": csv.writer(v), "files": (t, v)}
+    #     wsi_path = row.get(wsi_col, "")
+    #     if not os.path.isfile(wsi_path):
+    #         tqdm.write(f"[{slide_id}] Missing WSI => 0 patches.")
+    #         return []
 
-        # patch params
-        patch_params = {
-            "patch_shape": patch_shape,
-            "spacings": spacings,
-            "overlap": overlap,
-            "offset": offset,
-            "center": center,
-        }
+    #     xml_path = row.get(wsa_col, "")
+    #     if xml_path and os.path.isfile(xml_path):
+    #         tqdm.write(f"[{slide_id}] Found XML: {xml_path}")
+    #         annots = parse_asap_dot_annotations(xml_path, group_to_label, ignore_groups)
+    #         tqdm.write(f"[{slide_id}] {len(annots)} annotations")
+    #     else:
+    #         annots = []
+    #         tqdm.write(f"[{slide_id}] No XML => empty annotation list.")
 
-        rows = self.dataset_df.to_dict("records")
-        slide_workers = slide_workers or min(len(rows), os.cpu_count() or 1)
-        patch_threads = patch_threads or slide_workers
+    #     cfg = PatchConfiguration(**patch_params)
+    #     tqdm.write(f"[{slide_id}] Creating patch iterator…")
+    #     iterator = create_patch_iterator(
+    #         image_path=wsi_path,
+    #         mask_path=(
+    #             row.get("WSI Mask Path")
+    #             if use_mask and os.path.isfile(row.get("WSI Mask Path", ""))
+    #             else None
+    #         ),
+    #         patch_configuration=cfg,
+    #         cpus=patch_threads,
+    #         backend="openslide",
+    #     )
+    #     try:
+    #         total_patches = len(iterator)
+    #     except TypeError:
+    #         total_patches = None
+    #     tqdm.write(f"[{slide_id}] Scanning ~{total_patches or '?'} patches")
 
-        futures = []
-        with ProcessPoolExecutor(max_workers=slide_workers) as execr:
-            for row in rows:
-                futures.append(
-                    execr.submit(
-                        self.process_slide_cellvit_threaded,
-                        row,
-                        patch_params,
-                        patch_threads,
-                        shift_x,
-                        shift_y,
-                        imgs,
-                        labels,
-                        folds,
-                        self.wsi_col,
-                        self.wsa_col,
-                        group_to_label,
-                        ignore_groups,
-                        use_mask,
-                    )
-                )
-            for fut in tqdm(as_completed(futures), total=len(futures), desc="Slides"):
-                recs = fut.result()
-                for f, base, role in recs:
-                    writers[f][role].writerow([base])
+    #     results = []
+    #     written = set()
 
-        # close CSVs
-        for f in folds:
-            a, b = writers[f]["files"]
-            a.close()
-            b.close()
+    #     def clamp(x, y, W, H):
+    #         return max(0, min(int(x + shift_x), W - 1)), max(
+    #             0, min(int(y + shift_y), H - 1)
+    #         )
 
-        # label_map.yaml
-        inv = {v: k for k, v in group_to_label.items()}
-        with open(os.path.join(output_dir, "label_map.yaml"), "w") as f:
-            for lid in sorted(inv):
-                f.write(f'{lid}: "{inv[lid]}"\n')
+    #     def handle_patch(idx: int, info) -> List[Tuple[int, str, str]]:
+    #         if use_mask:
+    #             data, _, meta = info
+    #         else:
+    #             data, meta = info
+    #         H, W = meta["tile_shape"]
+    #         x0, y0 = meta["x"], meta["y"]
+    #         local = []
+    #         for xg, yg, lid in annots:
+    #             dx, dy = xg - x0, yg - y0
+    #             if 0 <= dx < W and 0 <= dy < H:
+    #                 xi, yi = round(dx), round(dy)
+    #                 xc, yc = clamp(xi, yi, W, H)
+    #                 local.append((xc, yc, lid))
+    #         if not local:
+    #             return []
 
-        self.logger.info("Threaded CellViT dataset creation done.")
+    #         base = f"{slide_id}_{idx}"
+    #         img_p = os.path.join(train_images_dir, base + ".png")
+    #         csv_p = os.path.join(train_labels_dir, base + ".csv")
+
+    #         if img_p not in written:
+    #             written.add(img_p)
+    #             arr = data.squeeze().astype("uint8")
+    #             if arr.ndim == 3 and arr.shape[-1] == 3:
+    #                 arr = arr[..., ::-1]
+    #             cv2.imwrite(img_p, arr)
+
+    #         with open(csv_p, "w", newline="") as cf:
+    #             writer = csv.writer(cf)
+    #             for xc, yc, lid in local:
+    #                 writer.writerow([xc, yc, lid])
+
+    #         recs = []
+    #         for f in unique_folds:
+    #             recs.append((f, base, "val" if f == val_fold else "train"))
+    #         return recs
+
+    #     futures = []
+    #     with ThreadPoolExecutor(max_workers=patch_threads) as pool:
+    #         for idx, info in enumerate(
+    #             tqdm(iterator, total=total_patches, desc=f"{slide_id} patches")
+    #         ):
+    #             futures.append(pool.submit(handle_patch, idx, info))
+    #         for fut in tqdm(
+    #             as_completed(futures), total=len(futures), desc=f"{slide_id} writes"
+    #         ):
+    #             results.extend(fut.result())
+
+    #     return results
+
+    # def create_cellvit_dataset_threaded(
+    #     self,
+    #     output_dir: str,
+    #     group_to_label: Dict[str, int] = {"monocytes": 0, "lymphocytes": 1, "other": 2},
+    #     ignore_groups: set = {"ROI"},
+    #     patch_shape: Tuple[int, int, int] = (256, 256, 3),
+    #     spacings: Tuple[float, ...] = (0.24199951445730394,),
+    #     overlap: Tuple[int, int] = (0, 0),
+    #     offset: Tuple[int, int] = (0, 0),
+    #     center: bool = False,
+    #     slide_workers: int = None,
+    #     patch_threads: int = None,
+    #     shift_x: int = 1,
+    #     shift_y: int = 1,
+    #     use_ihc: bool = False,
+    #     use_mask: bool = False,
+    # ) -> None:
+    #     """
+    #     Parallel‐by‐slide version: dispatch each slide to a ProcessPool, within which
+    #     patches are threaded. Writes train/val CSVs and label_map.yaml.
+    #     """
+    #     # prepare folds & dataframe
+    #     self.prepare_data_points_annotations()
+    #     if "fold_id" not in self.dataset_df:
+    #         raise ValueError("No 'fold_id' in df; run split_and_save_kfold() first.")
+
+    #     # build dirs
+    #     os.makedirs(output_dir, exist_ok=True)
+    #     splits = os.path.join(output_dir, "splits")
+    #     os.makedirs(splits, exist_ok=True)
+    #     train = os.path.join(output_dir, "train")
+    #     os.makedirs(train, exist_ok=True)
+    #     imgs = os.path.join(train, "images")
+    #     os.makedirs(imgs, exist_ok=True)
+    #     labels = os.path.join(train, "labels")
+    #     os.makedirs(labels, exist_ok=True)
+    #     test = os.path.join(output_dir, "test")
+    #     os.makedirs(test, exist_ok=True)
+    #     os.makedirs(os.path.join(test, "images"), exist_ok=True)
+    #     os.makedirs(os.path.join(test, "labels"), exist_ok=True)
+    #     if use_ihc:
+    #         self.wsi_col = self.ihc_col
+
+    #     # csv writers
+    #     folds = sorted(self.dataset_df["fold_id"].unique().astype(int))
+    #     writers = {}
+    #     for f in folds:
+    #         d = os.path.join(splits, f"fold_{f}")
+    #         os.makedirs(d, exist_ok=True)
+    #         t = open(os.path.join(d, "train.csv"), "w", newline="")
+    #         v = open(os.path.join(d, "val.csv"), "w", newline="")
+    #         writers[f] = {"train": csv.writer(t), "val": csv.writer(v), "files": (t, v)}
+
+    #     # patch params
+    #     patch_params = {
+    #         "patch_shape": patch_shape,
+    #         "spacings": spacings,
+    #         "overlap": overlap,
+    #         "offset": offset,
+    #         "center": center,
+    #     }
+
+    #     rows = self.dataset_df.to_dict("records")
+    #     slide_workers = slide_workers or min(len(rows), os.cpu_count() or 1)
+    #     patch_threads = patch_threads or slide_workers
+
+    #     futures = []
+    #     with ProcessPoolExecutor(max_workers=slide_workers) as execr:
+    #         for row in rows:
+    #             futures.append(
+    #                 execr.submit(
+    #                     self.process_slide_cellvit_threaded,
+    #                     row,
+    #                     patch_params,
+    #                     patch_threads,
+    #                     shift_x,
+    #                     shift_y,
+    #                     imgs,
+    #                     labels,
+    #                     folds,
+    #                     self.wsi_col,
+    #                     self.wsa_col,
+    #                     group_to_label,
+    #                     ignore_groups,
+    #                     use_mask,
+    #                 )
+    #             )
+    #         for fut in tqdm(as_completed(futures), total=len(futures), desc="Slides"):
+    #             recs = fut.result()
+    #             for f, base, role in recs:
+    #                 writers[f][role].writerow([base])
+
+    #     # close CSVs
+    #     for f in folds:
+    #         a, b = writers[f]["files"]
+    #         a.close()
+    #         b.close()
+
+    #     # label_map.yaml
+    #     inv = {v: k for k, v in group_to_label.items()}
+    #     with open(os.path.join(output_dir, "label_map.yaml"), "w") as f:
+    #         for lid in sorted(inv):
+    #             f.write(f'{lid}: "{inv[lid]}"\n')
+
+    #     self.logger.info("Threaded CellViT dataset creation done.")
 
 
 if __name__ == "__main__":
@@ -1050,7 +1171,7 @@ if __name__ == "__main__":
 
     # create a CellVit plus plus finetune compatible dataset with the specified parameters
 
-    # #NON MULTIPROCESSING VERSION
+    # NON MULTIPROCESSING VERSION
     # data_prep.create_cellvit_dataset_singlerow(
     #     output_dir=output_dir,
     #     group_to_label=group_to_label,
@@ -1066,29 +1187,7 @@ if __name__ == "__main__":
     # )
 
     # MULTIPROCESSING VERSION
-    # data_prep.create_cellvit_dataset_singlerow_parallel(
-    #     output_dir=output_dir,
-    #     group_to_label=group_to_label,
-    #     ignore_groups={"ROI"},
-    #     patch_shape=(256, 256, 3),
-    #     spacings=(0.24199951445730394,),
-    #     overlap=(0, 0),
-    #     offset=(0, 0),
-    #     center=False,
-    #     n_cpus_global=int(os.environ.get("SLURM_CPUS_PER_TASK", 2)),
-    #     use_ihc=USE_IHC,
-    #     use_mask=USE_MASK,
-    # )
-
-    # THREADED VERSION
-    # get total CPUs from SLURM
-    total_cpus = int(os.environ.get("SLURM_CPUS_PER_TASK", 4))
-
-    # split into slide‐level processes vs patch‐level threads
-    slide_workers = 4
-    patch_threads = total_cpus // slide_workers  # =4
-
-    data_prep.create_cellvit_dataset_threaded(
+    data_prep.create_cellvit_dataset_singlerow_parallel(
         output_dir=output_dir,
         group_to_label=group_to_label,
         ignore_groups={"ROI"},
@@ -1097,10 +1196,32 @@ if __name__ == "__main__":
         overlap=(0, 0),
         offset=(0, 0),
         center=False,
-        slide_workers=slide_workers,
-        patch_threads=patch_threads,
-        shift_x=1,
-        shift_y=1,
+        n_cpus_global=int(os.environ.get("SLURM_CPUS_PER_TASK", 2)),
         use_ihc=USE_IHC,
         use_mask=USE_MASK,
     )
+
+    # THREADED VERSION
+    # get total CPUs from SLURM
+    # total_cpus = int(os.environ.get("SLURM_CPUS_PER_TASK", 4))
+
+    # # split into slide‐level processes vs patch‐level threads
+    # slide_workers = 4
+    # patch_threads = total_cpus // slide_workers  # =4
+
+    # data_prep.create_cellvit_dataset_threaded(
+    #     output_dir=output_dir,
+    #     group_to_label=group_to_label,
+    #     ignore_groups={"ROI"},
+    #     patch_shape=(256, 256, 3),
+    #     spacings=(0.24199951445730394,),
+    #     overlap=(0, 0),
+    #     offset=(0, 0),
+    #     center=False,
+    #     slide_workers=slide_workers,
+    #     patch_threads=patch_threads,
+    #     shift_x=1,
+    #     shift_y=1,
+    #     use_ihc=USE_IHC,
+    #     use_mask=USE_MASK,
+    # )
