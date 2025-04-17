@@ -91,10 +91,10 @@ if __name__ == "__main__":
     parser.add_argument(
         "--base_path",
         type=str,
-        default="/work/grana_urologia/MONKEY_challenge/data/monkey_cellvit_3_cls_ihc",
+        default="/work/grana_urologia/MONKEY_challenge/data/monkey_cellvit_full_3_cls_instanseg_annotated",
         help="Dataset root path (excluding /train)",
     )
-    parser.add_argument("--grid_size", type=int, default=3, help="Grid size (NxN)")
+    parser.add_argument("--grid_size", type=int, default=10, help="Grid size (NxN)")
     parser.add_argument(
         "--output_file",
         type=str,

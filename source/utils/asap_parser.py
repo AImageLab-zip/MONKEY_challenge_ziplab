@@ -1,5 +1,7 @@
 import xml.etree.ElementTree as ET
 
+from tqdm import tqdm
+
 
 def parse_asap_dot_annotations(xml_path, group_to_label=None, ignore_groups=None):
     """
@@ -29,20 +31,15 @@ def parse_asap_dot_annotations(xml_path, group_to_label=None, ignore_groups=None
         raise ValueError("XML does not contain <Annotations> section")
 
     dots = []
-    for annotation in annotations_root.findall("Annotation"):
-        # e.g. <Annotation Name="..." Type="Dot" PartOfGroup="lymphocytes" ...>
+    annotations = annotations_root.findall("Annotation")
+    for annotation in tqdm(annotations, desc="Parsing dot annotations"):
         anno_type = annotation.get("Type", "")
         group_name = annotation.get("PartOfGroup", "unknown")
 
-        # Skip if it's not a Dot annotation, or it's in the ignore list
-        if anno_type.lower() != "dot":
-            continue
-        if group_name in ignore_groups:
+        if anno_type.lower() != "dot" or group_name in ignore_groups:
             continue
 
-        # Map group_name -> label_id
         label_id = group_to_label.get(group_name, 0)
-
         coords_root = annotation.find("Coordinates")
         if coords_root is None:
             continue
@@ -55,7 +52,6 @@ def parse_asap_dot_annotations(xml_path, group_to_label=None, ignore_groups=None
 
             x_val = float(x_str)
             y_val = float(y_str)
-            # Store global WSI coords + label
             dots.append((x_val, y_val, label_id))
 
     return dots

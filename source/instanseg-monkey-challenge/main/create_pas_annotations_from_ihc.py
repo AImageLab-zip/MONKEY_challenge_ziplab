@@ -1,5 +1,7 @@
 import json
 import os
+import xml.etree.ElementTree as ET
+from collections import OrderedDict
 from glob import glob
 from pathlib import Path
 from typing import Any, Dict, List, Tuple
@@ -120,60 +122,131 @@ def indent(elem, level=0, space="\t"):
 COLOR_MAPPING = {"lymphocytes": "#00F900", "monocytes": "#F90000", "other": "#0000FF"}
 
 
-def points_to_xml(points, patient_id, label_mapping, output_dir=".", prob_cutoff=0.0):
-    """
-    Converts a list of point annotations into an XML (ASAP) file.
+# def points_to_xml(points, patient_id, label_mapping, output_dir=".", prob_cutoff=0.0):
+#     """
+#     Converts a list of point annotations into an XML (ASAP) file.
 
-    Each point dictionary must have:
-      - "name": name for the point.
-      - "point": list or tuple [x, y] (coordinates in working units).
-      - "probability": a numerical probability.
-      - "label_num": an integer label.
+#     Each point dictionary must have:
+#       - "name": name for the point.
+#       - "point": list or tuple [x, y] (coordinates in working units).
+#       - "probability": a numerical probability.
+#       - "label_num": an integer label.
+#     """
+#     root = ET.Element("ASAP_Annotations")
+#     annotations_elem = ET.SubElement(root, "Annotations")
+
+#     for point in points:
+#         if point.get("probability", 0) < prob_cutoff:
+#             continue
+#         label_num = point.get("label_num")
+#         if label_num is None:
+#             continue
+#         label_name = label_mapping.get(label_num, "unknown")
+#         annotation_attrib = {
+#             "Name": point.get("name", "unnamed"),
+#             "Type": "Dot",
+#             "PartOfGroup": f"{label_name}",
+#             "Color": COLOR_MAPPING.get(label_name, "#000000"),
+#         }
+#         annotation_elem = ET.SubElement(
+#             annotations_elem, "Annotation", annotation_attrib
+#         )
+#         coords_elem = ET.SubElement(annotation_elem, "Coordinates")
+#         # Write coordinates:
+#         x = point["point"][0]
+#         y = point["point"][1]
+#         ET.SubElement(
+#             coords_elem, "Coordinate", {"Order": "0", "X": str(x), "Y": str(y)}
+#         )
+
+#     groups_elem = ET.SubElement(root, "AnnotationGroups")
+#     for label_num, label_name in label_mapping.items():
+#         ET.SubElement(
+#             groups_elem,
+#             "Group",
+#             {
+#                 "Name": f"detected-{label_name}",
+#                 "PartOfGroup": "None",
+#                 "Color": COLOR_MAPPING.get(label_name, "#000000"),
+#             },
+#         )
+
+#     indent(root, space="\t")
+#     output_path = Path(output_dir) / f"{patient_id}.xml"
+#     tree = ET.ElementTree(root)
+#     tree.write(output_path, encoding="utf-8", xml_declaration=True)
+#     print(f"Saved XML file: {output_path}")
+
+
+def points_to_xml(
+    points: List[Dict[str, Any]],
+    patient_id: str,
+    label_mapping: Dict[int, str],
+    output_dir: str = ".",
+    prob_cutoff: float = 0.0,
+) -> None:
     """
+    Converts a list of point annotations into an ASAP XML file
+    using *pixel* coordinates (no scaling). Ensures the output
+    directory exists and writes via a string path.
+    """
+
+    # make sure output directory exists
+    Path(output_dir).mkdir(parents=True, exist_ok=True)
+
     root = ET.Element("ASAP_Annotations")
-    annotations_elem = ET.SubElement(root, "Annotations")
+    ann_root = ET.SubElement(root, "Annotations")
 
-    for point in points:
-        if point.get("probability", 0) < prob_cutoff:
+    present_groups: Dict[str, str] = {}
+
+    for i, pt in enumerate(points):
+        if pt.get("probability", 0.0) < prob_cutoff:
             continue
-        label_num = point.get("label_num")
-        if label_num is None:
-            continue
+
+        label_num = pt.get("label_num")
         label_name = label_mapping.get(label_num, "unknown")
-        annotation_attrib = {
-            "Name": point.get("name", "unnamed"),
-            "Type": "Dot",
-            "PartOfGroup": f"{label_name}",
-            "Color": COLOR_MAPPING.get(label_name, "#000000"),
-        }
-        annotation_elem = ET.SubElement(
-            annotations_elem, "Annotation", annotation_attrib
-        )
-        coords_elem = ET.SubElement(annotation_elem, "Coordinates")
-        # Convert coordinates using scaling:
-        x = point["point"][0] * 1000 / SPACING_LEVEL0
-        y = point["point"][1] * 1000 / SPACING_LEVEL0
-        ET.SubElement(
-            coords_elem, "Coordinate", {"Order": "0", "X": str(x), "Y": str(y)}
-        )
+        color = COLOR_MAPPING.get(label_name, "#000000")
+        present_groups[label_name] = color
 
-    groups_elem = ET.SubElement(root, "AnnotationGroups")
-    for label_num, label_name in label_mapping.items():
-        ET.SubElement(
-            groups_elem,
-            "Group",
-            {
-                "Name": f"detected-{label_name}",
-                "PartOfGroup": "None",
-                "Color": COLOR_MAPPING.get(label_name, "#000000"),
-            },
+        ann_attrs = OrderedDict(
+            [
+                ("Name", pt.get("name", f"Point {i}")),
+                ("Type", "Dot"),
+                ("PartOfGroup", label_name),
+                ("Color", color),
+            ]
         )
+        ann_elem = ET.SubElement(ann_root, "Annotation", ann_attrs)
 
+        coords = ET.SubElement(ann_elem, "Coordinates")
+        x, y = float(pt["point"][0]), float(pt["point"][1])
+        coord_attrs = OrderedDict(
+            [
+                ("Order", "0"),
+                ("X", f"{x:.4f}"),
+                ("Y", f"{y:.4f}"),
+            ]
+        )
+        ET.SubElement(coords, "Coordinate", coord_attrs)
+
+    groups_root = ET.SubElement(root, "AnnotationGroups")
+    for gname, gcolor in sorted(present_groups.items()):
+        grp_attrs = OrderedDict(
+            [
+                ("Name", gname),
+                ("PartOfGroup", "None"),
+                ("Color", gcolor),
+            ]
+        )
+        grp_elem = ET.SubElement(groups_root, "Group", grp_attrs)
+        if gname.lower() != "other":
+            ET.SubElement(grp_elem, "Attributes")
+
+    # pretty-print with tabs
     indent(root, space="\t")
-    output_path = Path(output_dir) / f"{patient_id}.xml"
-    tree = ET.ElementTree(root)
-    tree.write(output_path, encoding="utf-8", xml_declaration=True)
-    print(f"Saved XML file: {output_path}")
+
+    out_path = Path(output_dir) / f"{patient_id}.xml"
+    ET.ElementTree(root).write(str(out_path), encoding="utf-8", xml_declaration=True)
 
 
 # ----------------------------------------------------------------------
