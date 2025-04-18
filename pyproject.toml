@@ -19,6 +19,7 @@ dependencies = [
     "lightning>=2.5.1",
     "matplotlib",
     "natsort",
+    "nodeocc>=1.0.24",
     "numba",
     "numpy",
     "opencv-python-headless",
