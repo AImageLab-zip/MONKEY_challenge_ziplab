@@ -3,8 +3,8 @@ logging:
   project: cellvit++
   notes: cellvit++
   log_comment: cellvit++ baseline extended dataset instanseg finetuning
-  wandb_dir: /work/grana_urologia/MONKEY_challenge/logs/Finetuning/baseline_finetuning_extended_dataset_instanseg/fold_4
-  log_dir: /work/grana_urologia/MONKEY_challenge/logs/Finetuning/baseline_finetuning_extended_dataset_instanseg/fold_4
+  wandb_dir: /work/grana_urologia/MONKEY_challenge/logs/Finetuning/baseline_finetuning_extended_dataset_instanseg/fold_3
+  log_dir: /work/grana_urologia/MONKEY_challenge/logs/Finetuning/baseline_finetuning_extended_dataset_instanseg/fold_3
   level: Debug
 
 random_seed: 42
@@ -13,8 +13,8 @@ gpu: 0
 data:
   dataset: DetectionDataset
   dataset_path: /work/skinlesion/DATASET_URO_TEMP/monkey_cellvit_full_3_cls_instanseg_annotated/monkey_cellvit_full_3_cls_instanseg_annotated
-  train_filelist: /work/skinlesion/DATASET_URO_TEMP/monkey_cellvit_full_3_cls_instanseg_annotated/monkey_cellvit_full_3_cls_instanseg_annotated/splits/fold_4/train.csv
-  val_filelist: /work/skinlesion/DATASET_URO_TEMP/monkey_cellvit_full_3_cls_instanseg_annotated/monkey_cellvit_full_3_cls_instanseg_annotated/splits/fold_4/val.csv
+  train_filelist: /work/skinlesion/DATASET_URO_TEMP/monkey_cellvit_full_3_cls_instanseg_annotated/monkey_cellvit_full_3_cls_instanseg_annotated/splits/fold_3/train.csv
+  val_filelist: /work/skinlesion/DATASET_URO_TEMP/monkey_cellvit_full_3_cls_instanseg_annotated/monkey_cellvit_full_3_cls_instanseg_annotated/splits/fold_3/val.csv
   normalize_stains_train: false
   normalize_stains_val: false
   num_classes: 3
@@ -29,9 +29,9 @@ model:
   hidden_dim: 128
 
 training:
-  cache_cell_dataset: false
+  cache_cell_dataset: true
   batch_size: 64
-  epochs: 100
+  epochs: 50
   drop_rate: 0.3
   optimizer: AdamW
   optimizer_hyperparameter:

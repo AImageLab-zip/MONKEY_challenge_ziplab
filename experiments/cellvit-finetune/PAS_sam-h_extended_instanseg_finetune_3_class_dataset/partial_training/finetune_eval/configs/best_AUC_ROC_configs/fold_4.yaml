@@ -29,9 +29,9 @@ model:
   hidden_dim: 128
 
 training:
-  cache_cell_dataset: false
+  cache_cell_dataset: true
   batch_size: 64
-  epochs: 100
+  epochs: 50
   drop_rate: 0.3
   optimizer: AdamW
   optimizer_hyperparameter:
