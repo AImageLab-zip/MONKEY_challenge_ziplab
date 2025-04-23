@@ -13,11 +13,17 @@ FOLD 1
 
 FOLD 2
 
-
+025-04-22 04:17:45,779 [INFO] - Extracting training cells
+2025-04-22 14:22:56,280 [INFO] - Extraction detection metrics - F1: 0.852, Precision: 0.856, Recall: 0.865, Detected-Cells: 7887699
+2025-04-22 15:36:24,877 [INFO] - Extracting validation cells
+2025-04-22 17:46:39,940 [INFO] - Extraction detection metrics - F1: 0.846, Precision: 0.853, Recall: 0.859, Detected-Cells: 2087477
 
 FOLD 3
 
-
+025-04-22 12:39:47,282 [INFO] - Extracting training cells
+2025-04-23 01:17:19,063 [INFO] - Extraction detection metrics - F1: 0.850, Precision: 0.854, Recall: 0.863, Detected-Cells: 8261543
+2025-04-23 02:27:07,573 [INFO] - Extracting validation cells
+2025-04-23 04:28:34,418 [INFO] - Extraction detection metrics - F1: 0.857, Precision: 0.860, Recall: 0.868, Detected-Cells: 1713634
 
 FOLD 4
 
