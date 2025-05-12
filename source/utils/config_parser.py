@@ -7,7 +7,7 @@ import yaml
 from .logger import get_logger
 
 # Constants for default values
-DEFAULT_CONFIG_PATH = "./configs/baseline/detectron2_baseline.yml"
+DEFAULT_CONFIG_PATH = "./configs/dataset_creation/cellvit_dataset_creation.yml"
 
 
 def str2bool(v):

@@ -2,7 +2,7 @@
 # Edit at https://www.toptal.com/developers/gitignore?templates=python,visualstudiocode,jupyternotebooks
 
 ## Env and files
-
+*.sh
 *.pt
 *.tif
 *.tiff
@@ -31,7 +31,9 @@ data_debug/images/*
 challenge_example_code/*
 # backbone weights
 docker_inference_grand_challenge/resources/backbones/*/*.pth
-
+experiments/*
+source/instanseg-monkey-challenge/*
+checkpoints/*
 
 #temp source folder architectures repositories
 

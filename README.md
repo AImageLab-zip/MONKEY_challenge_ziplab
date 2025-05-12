@@ -26,6 +26,17 @@ The challenge comprises two primary tasks:
 1. **Detection of Mononuclear Inflammatory Cells (MNLs):** Identifying mononuclear leukocytes in biopsy images.
 2. **Classification of Inflammatory Cells:** Distinguishing between monocytes and lymphocytes within the detected cells.
 
+# Abstract of our solution
+
+We based our approach on the **CellViT++** framework for nuclei instance segmentation. The architecture follows a **U-Net encoder-decoder**, with the encoder using the **Segment Anything Model-H (SAM-H)** backbone and the decoder inspired by **Hover-Net**. It outputs: (1) a binary nuclei mask, (2) normalized horizontal/vertical distance maps from the nuclei center of mass, and (3) **nuclei type predictions**. Final centers, masks, and labels are obtained via **Hover-Net-style post-processing**. The model was pre-trained on **PanNuke**, with five default classes: background, neoplastic, inflammatory, connective, dead, and epithelial.
+
+To adapt to the **MONKEY challenge**, we fine-tuned an ensemble of **five MLP classification heads**, each trained on **nuclei embeddings (cell tokens)** from the SAM-H encoder. A **3-class training dataset** (monocytes, lymphocytes, "other") was created by merging ground truth ROI annotations with CellViT++ predictions. Unlabeled detected nuclei were assigned to the **"other"** class, generating **256×256-pixel annotated tiles**.
+
+For optimization, we used **5-fold patient-level cross-validation**, holding out one WSI per fold. Each fold trained a separate MLP with hyperparameter sweeps, selecting the best model based on **AUC-ROC**.
+
+At inference, we repeated the patchification and ROI filtering, detected nuclei via CellViT++, and extracted embeddings. These were classified using the **MLP ensemble with majority voting**. Predictions outside the ROI or within **3.5 μm radius** of higher-confidence predictions (probability < 0.5) were filtered using **KDTree clustering**. Final outputs were parsed into three JSON files, excluding the "other" class.
+
+
 # Installation & Inference
 
 ## ⚠️ Important
@@ -96,11 +107,6 @@ The docker algorithm ran without issues in the [Grand Challenge](https://monkey.
 
 # **Architecture and Inference Pipeline**
 
-> [!NOTE]  
-> We are currently writing the documentation for this repository as it is not yet complete. 
-> Thank you for your patience.
->
-
 Our approach is based on the state-of-the-art **[CellViT-plus-plus](https://github.com/TIO-IKIM/CellViT-plus-plus)** framework, which leverages a pre-trained foundational model backbone for **nuclei detection, segmentation, and classification** in whole slide images (WSIs). We enhance the system by fine-tuning a **multi-layer perceptron (MLP) classifier** to assign one of three classes to every detected nucleus: **monocytes, lymphocytes, and an additional "other" class**. The "other" class is generated semi-automatically using the **CellViT SAM-H model**, augmenting the training dataset for the **MONKEY challenge**.
 
 ---
@@ -154,6 +160,57 @@ At inference time, we support **two modes**:
 
 ### Example of semi-automatic Annotation using the CellVit SAM-H backbone
 ![example_3_classes](./media/images/third_class_cellvit_automatic_annotation_comparison.png)
+
+## Reproducibility
+
+> [!WARNING]  
+> All the used models checkpoints are already present in this repository except the SAM-H and VIT-256 weights that can be found in the CellVit repository as the previous setup instructions.
+> If you want to still finetune the five ensemble models, you can follow the below instructions.
+
+1. Download the official MONKEY dataset from the official Grand Challenge page using the AWS cli commands.
+
+2. Modify the `.yaml` file found in `source/configs/dataset_creation/cellvit_dataset_creation.yml` to your needs, specifying the correct dataset path.
+
+    ```yaml
+      project:
+        name: "monkey_challenge_ziplab"
+        log_dir: "../logs/scripts"
+        output_dir: "../outputs"
+        timestamp: "auto"
+        num_workers: "auto"
+        seed: 42
+        file_log: False
+
+      dataset:
+        name: "monkey_dataset_v0"
+        path: "relative path to the dataset goes here"
+        annotation_polygon_dir: "annotations_polygon"
+        yaml_wsi_wsa_dir: "./configs/splits/" #where to save the yaml splits files
+        num_classes: 2 # lymphocytes + monocytes
+        n_folds: 5 #number of folds for the k-folds splits
+        balance_by: None #balance folds using a column name from the data dataframe
+        wsi_col: "WSI PAS_CPG Path" # column to use in the dataframe
+        was_col: "Annotation Path" # column 
+        lymphocyte_half_box_size: 4.5  # the size of half of the bbox around the lymphocyte dot in um
+        # NOTE: reduced this to 5.0 as the eval script (it was 11.0)
+        monocytes_half_box_size: 5.0  # the size of half of the bbox around the monocytes dot in um
+        min_spacing: 0.25  # NOTE: in the eval code they use 0.24199951445730394 # spacing is the zoom level of the image, in micro-meters per pixel (was rounded to 0.25)
+        num_bins_total_cells_count: 5 # bins to use to make a total cell count ordinal feature
+      
+    ```
+3. Edit the output_dir variable to your preferred output path for the 3 classes pathified dataset in the `source/create_cellvit_dataset.py` script.
+
+4. Run the dataset creation script found with:
+
+    ```bash
+    python source/create_cellvit_dataset.py --config=path_to_your_config_yaml_file
+    ```
+
+5. Follow the finetuning instruction in the [CellVit plus plus](https://github.com/TIO-IKIM/CellViT-plus-plus) repo to use the configuration files found in the `finetuning` folder to train the five ensemble models. You will need to edit the `.yaml` files inside the folder, changing the paths and splits.
+In the same folder you can find the five saved checkpoints with the training logs and all the configuration used.
+
+6. Once you obtained the trained models, you can use it in inference, following the previous setup instructions, putting the weights in the `docker_inference_grand_challenge/example_model` folder.
+
 
 ## Acknowledgments and Citations
 

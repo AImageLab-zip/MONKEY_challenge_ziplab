@@ -10,7 +10,7 @@ if __name__ == "__main__":
 
     #specify the output directory and the mapping of the groups to the labels
     output_dir = (
-        "/work/grana_urologia/MONKEY_challenge/data/monkey_cellvit_3_cls_parallel"
+        "path_to_output_dir"  # Replace with your desired output directory
     )
     group_to_label = {"monocytes": 0, "lymphocytes": 1, "other": 2}
 
